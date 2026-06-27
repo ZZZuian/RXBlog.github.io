@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block page_content %}
+
+    <div class="page-header">
+        <h1>{{ timestamp[2:] }}</h1>
+    </div>
+
+    <div>
+        {{ wtf.quick_form(form) }}
+    </div>
+
+    <div>
+        <p>Text: {{entry['entry']}}</br>
+        Tags:
+            {% if entry['tags']|length != 0 %}
+                    {% for tag in entry['tags'] %}
+                        <a href="{{ url_for('main.view_entries_for_tag', tag=tag, _external=True) }}">#{{ tag }}</a>
+                    {% endfor %}
+                {% else %}
+                    none
+                {% endif %}
+                </p></li>
+        </p>
+        <a class="btn btn-default" href="{{ url_for('main.edit_entry', timestamp=timestamp, _external=True) }}">Edit entry</a>
+    </div>
+
+{% endblock %}

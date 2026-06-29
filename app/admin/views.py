@@ -1,44 +1,47 @@
-from flask import Flask, session, redirect, url_for, render_template, flash, \
-                  Blueprint
-import ujson
-from app.db import *
-from . import admin
-from .forms import RenameChronofileForm, RenameAuthorForm
-from app.decorators import login_required
+from flask import flash, redirect, render_template, session, url_for
+
+from app.decorators import admin_required, login_required
 from app.details import get_details
+from app.extensions import db
+from app.models import SiteSetting, User
+from . import admin
+from .forms import RenameAuthorForm, RenameChronofileForm
 
 
 @admin.route('/')
 @login_required
 def view_admin():
-    '''Display name of site, author, etc. as well as links to edit
-    those details and change email, password, etc.'''
-    details = get_details()
-    return render_template('admin.html', details=details)
+    user = db.session.get(User, session['user_id'])
+    return render_template('admin.html', details=get_details(), user=user)
 
 
 @admin.route('/rename_chronofile', methods=['GET', 'POST'])
-@login_required
+@admin_required
 def rename_chronofile():
-    details = get_details()
     form = RenameChronofileForm()
     if form.validate_on_submit():
-        update_record('admin', {'chronofile_name': form.new_name.data}, \
-                      Query().creator_id == session.get('user_id'))
-        flash('时间记录本名称已更新。')
+        setting = db.session.get(SiteSetting, 'site_name')
+        if not setting:
+            setting = SiteSetting(key='site_name')
+            db.session.add(setting)
+        setting.value = form.new_name.data.strip()
+        setting.updated_by = session['user_id']
+        db.session.commit()
+        flash('平台名称已更新。')
         return redirect(url_for('admin.view_admin'))
-    return render_template('rename_chronofile.html', \
-                           form=form, details=details)
+    return render_template('rename_chronofile.html', form=form,
+                           details=get_details())
 
 
 @admin.route('/rename_author', methods=['GET', 'POST'])
 @login_required
 def rename_author():
-    details = get_details()
     form = RenameAuthorForm()
     if form.validate_on_submit():
-        test=update_record('admin', {'author_name': form.new_name.data}, \
-                           Query().creator_id == session.get('user_id'))
-        flash('作者名称已更新。')
+        user = db.session.get(User, session['user_id'])
+        user.profile.nickname = form.new_name.data.strip()
+        db.session.commit()
+        flash('个人昵称已更新。')
         return redirect(url_for('admin.view_admin'))
-    return render_template('rename_author.html', form=form, details=details)
+    return render_template('rename_author.html', form=form,
+                           details=get_details())

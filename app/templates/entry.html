@@ -1,87 +1,114 @@
 {% extends "base.html" %}
 {% block page_content %}
+<div class="page-header"><h1>{{ post.title or post.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</h1></div>
 
-    <div class="page-header">
-        <h1>{{ timestamp[2:] }}</h1>
+<div class="entry-detail">
+    <p>作者：<a href="{{ url_for('user.view_user_profile', user_id=post.author_id) }}">{{ post.author.profile.nickname }}</a></p>
+    <p>发布于 {{ post.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</p>
+    <p>内容：{{ post.content }}</p>
+    <p>标签：{% for tag in post.tags or [] %}<a href="{{ url_for('main.view_entries_for_tag', tag=tag) }}">#{{ tag }}</a> {% else %}无{% endfor %}</p>
+    {% if post.display_images %}
+    <div class="post-gallery">
+        {% for image_path in post.display_images %}
+        <button class="gallery-thumb" type="button" data-full="{{ url_for('static', filename=image_path) }}">
+            <img src="{{ url_for('static', filename=image_path) }}" alt="{{ post.title or '博文图片' }} {{ loop.index }}" loading="lazy">
+        </button>
+        {% endfor %}
     </div>
-
-    <div>
-        {{ wtf.quick_form(form) }}
+    <div id="imageLightbox" class="image-lightbox" hidden>
+        <button type="button" class="lightbox-close" aria-label="关闭">×</button>
+        <img src="" alt="放大的博文图片">
     </div>
+    {% endif %}
+    {% if session.logged_in %}
+    <button id="postLike" class="like-btn{% if liked %} liked{% endif %}" type="button">{% if liked %}♥{% else %}♡{% endif %} <span>{{ post.likes_count }}</span></button>
+    {% else %}<span>♡ {{ post.likes_count }}</span>{% endif %}
 
-    <div class="entry-detail">
-        <p>内容：{{entry['entry']}}</br>
-        标签:
-            {% if entry['tags']|length != 0 %}
-                    {% for tag in entry['tags'] %}
-                        <a href="{{ url_for('main.view_entries_for_tag', tag=tag, _external=True) }}">#{{ tag }}</a>
-                    {% endfor %}
+    {% if session.user_id == post.author_id %}
+    <a class="btn btn-default" href="{{ url_for('main.edit_post', post_id=post.id) }}">编辑记录</a>
+    <form method="post" action="{{ url_for('main.delete_post', post_id=post.id) }}" class="entry-delete-form" onsubmit="return confirm('确定删除这条记录吗？');">
+        {{ delete_form.hidden_tag() }}
+        {{ delete_form.submit(class_='btn btn-danger') }}
+    </form>
+    {% endif %}
+</div>
+
+<div class="comment-section">
+    <h3>评论 ({{ comments|length }})</h3>
+    <div class="comment-list">
+    {% for comment in comments %}
+    <div class="comment-item" id="comment-{{ comment.id }}">
+        <div class="comment-header">
+            <div class="comment-avatar-container">
+                {% if comment.author and comment.author.profile and comment.author.profile.avatar %}
+                <img src="{{ url_for('static', filename=comment.author.profile.avatar) }}" alt="{{ comment.nickname }}" class="comment-avatar">
                 {% else %}
-                    无
+                <div class="comment-avatar comment-avatar-default">{{ comment.nickname[0] }}</div>
                 {% endif %}
-                </p>
-        <span class="like-btn" data-timestamp="{{ timestamp }}">
-            <span class="like-icon">♡</span>
-            <span class="like-count">{{ entry.get('likes', 0) }}</span>
-        </span>
-        <a class="btn btn-default" href="{{ url_for('main.edit_entry', timestamp=timestamp, _external=True) }}">编辑记录</a>
-    </div>
-
-    <div class="comment-section">
-        <h3>评论 ({{ comments|length }})</h3>
-
-        {% if comments %}
-        <div class="comment-list">
-            {% for c in comments %}
-            <div class="comment-item">
-                <div class="comment-header">
-                    <span class="comment-nickname">{{ c['nickname'] }}</span>
-                    <span class="comment-time">{{ c['created_at'] }}</span>
-                </div>
-                <div class="comment-body">{{ c['content'] }}</div>
             </div>
-            {% endfor %}
+            <div class="comment-meta">
+                {% if comment.author %}
+                <a href="{{ url_for('user.view_user_profile', user_id=comment.author_id) }}" class="comment-author-link comment-nickname">{{ comment.nickname }}</a>
+                {% else %}
+                <span class="comment-nickname">{{ comment.nickname }}</span>
+                {% endif %}
+                <span class="comment-time">{{ comment.created_at.strftime('%Y-%m-%d %H:%M') }}</span>
+            </div>
+            {% if session.user_id == comment.author_id or is_admin %}
+            <form method="post" action="{{ url_for('main.delete_comment', comment_id=comment.id) }}" class="comment-delete-form">
+                {{ delete_form.hidden_tag() }}
+                <button type="submit" class="comment-delete-btn" title="删除评论" onclick="return confirm('确定删除这条评论吗？');">×</button>
+            </form>
+            {% endif %}
         </div>
-        {% endif %}
-
-        <div class="comment-form">
-            {{ wtf.quick_form(comment_form) }}
-        </div>
+        <div class="comment-body">{{ comment.content }}</div>
     </div>
+    {% endfor %}
+    </div>
+    {% if session.logged_in %}
+    <div class="comment-form">
+        {{ wtf.quick_form(comment_form) }}
+    </div>
+    {% else %}
+    <p class="login-hint"><a href="{{ url_for('auth.login', next=request.url) }}">登录</a>后参与评论。</p>
+    {% endif %}
+</div>
 
-    <script>
-    document.querySelectorAll('.like-btn').forEach(function(btn) {
-        var ts = btn.getAttribute('data-timestamp');
-        var icon = btn.querySelector('.like-icon');
-        var count = btn.querySelector('.like-count');
-        var likedKey = 'liked_' + ts;
-        if (localStorage.getItem(likedKey)) {
-            icon.textContent = '♥';
-            icon.classList.add('liked');
-        }
-        btn.addEventListener('click', function() {
-            var isLiked = localStorage.getItem(likedKey);
-            var action = isLiked ? 'unlike' : 'like';
-            fetch('/api/like/' + encodeURIComponent(ts), {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({action: action})
-            })
-            .then(function(r){ return r.json(); })
-            .then(function(data){
-                count.textContent = data.likes;
-                if (isLiked) {
-                    icon.textContent = '♡';
-                    icon.classList.remove('liked');
-                    localStorage.removeItem(likedKey);
-                } else {
-                    icon.textContent = '♥';
-                    icon.classList.add('liked');
-                    localStorage.setItem(likedKey, '1');
-                }
-            });
+{% if session.logged_in %}
+<script>
+document.getElementById('postLike').addEventListener('click', function() {
+    var btn = this, liked = btn.classList.contains('liked');
+    fetch('{{ url_for("main.like_post", post_id=post.id) }}', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({action: liked ? 'unlike' : 'like'})
+    }).then(function(r) { return r.json(); }).then(function(data) {
+        btn.classList.toggle('liked', data.liked);
+        btn.firstChild.textContent = data.liked ? '♥ ' : '♡ ';
+        btn.querySelector('span').textContent = data.likes;
+    });
+});
+</script>
+{% endif %}
+{% if post.display_images %}
+<script>
+(function() {
+    var lightbox = document.getElementById('imageLightbox');
+    var image = lightbox.querySelector('img');
+    function closeLightbox() { lightbox.hidden = true; image.src = ''; }
+    document.querySelectorAll('.gallery-thumb').forEach(function(button) {
+        button.addEventListener('click', function() {
+            image.src = button.dataset.full;
+            lightbox.hidden = false;
         });
     });
-    </script>
-
+    lightbox.querySelector('.lightbox-close').addEventListener('click', closeLightbox);
+    lightbox.addEventListener('click', function(event) {
+        if (event.target === lightbox) closeLightbox();
+    });
+    document.addEventListener('keydown', function(event) {
+        if (event.key === 'Escape') closeLightbox();
+    });
+})();
+</script>
+{% endif %}
 {% endblock %}

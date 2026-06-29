@@ -1,75 +1,7 @@
 {% extends "base.html" %}
 {% block page_content %}
-
-    <div class="page-header">
-        {% if entries_for_day|length == 0 %}
-            <h1>暂无记录</h1>
-        {% else %}
-            <h1>{{ day[2:] }}</h1>
-        {% endif %}
-    </div>
-
-    <div>
-        {{ wtf.quick_form(form) }}
-    </div>
-
-    <div>
-        <ul>
-        {% for entry in entries_for_day %}
-            <li class="entry-item"><p><a href="{{ url_for('main.view_single_entry', timestamp=entry['timestamp'], _external=True) }}">{{ entry['timestamp'][11:] }}</a>: {{entry['entry']}}</br>
-            标签:
-                {% if entry['tags']|length != 0 %}
-                    {% for tag in entry['tags'] %}
-                        <a href="{{ url_for('main.view_entries_for_tag', tag=tag, _external=True) }}">#{{ tag }}</a>
-                    {% endfor %}
-                {% else %}
-                    无
-                {% endif %}
-                <span class="like-btn" data-timestamp="{{ entry['timestamp'] }}">
-                    <span class="like-icon">♡</span>
-                    <span class="like-count">{{ entry.get('likes', 0) }}</span>
-                </span>
-                <a class="comment-link" href="{{ url_for('main.view_single_entry', timestamp=entry['timestamp'], _external=True) }}">
-                    💬 {{ comment_counts.get(entry['timestamp'], 0) }}
-                </a>
-                </p></li>
-        {% endfor %}
-        </ul>
-    </div>
-
-    <script>
-    document.querySelectorAll('.like-btn').forEach(function(btn) {
-        var ts = btn.getAttribute('data-timestamp');
-        var icon = btn.querySelector('.like-icon');
-        var count = btn.querySelector('.like-count');
-        var likedKey = 'liked_' + ts;
-        if (localStorage.getItem(likedKey)) {
-            icon.textContent = '♥';
-            icon.classList.add('liked');
-        }
-        btn.addEventListener('click', function() {
-            var isLiked = localStorage.getItem(likedKey);
-            var action = isLiked ? 'unlike' : 'like';
-            fetch('/api/like/' + encodeURIComponent(ts), {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({action: action})
-            })
-            .then(function(r){ return r.json(); })
-            .then(function(data){
-                count.textContent = data.likes;
-                if (isLiked) {
-                    icon.textContent = '♡';
-                    icon.classList.remove('liked');
-                    localStorage.removeItem(likedKey);
-                } else {
-                    icon.textContent = '♥';
-                    icon.classList.add('liked');
-                    localStorage.setItem(likedKey, '1');
-                }
-            });
-        });
-    });
-    </script>
-
+<div class="page-header"><h1>{{ day }} 的社区动态</h1></div>
+<div class="post-grid">
+{% for post in entries_for_day %}{% include '_post_card.html' %}{% endfor %}
+</div>
 {% endblock %}

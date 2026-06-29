@@ -4,7 +4,7 @@
 {% block styles %}
 {{super()}}
 <link rel="stylesheet"
-      href="{{ url_for('static', filename='custom.css') }}?v=20260629d">
+      href="{{ url_for('static', filename='custom.css') }}?v=20260629i">
 <link rel="stylesheet"
       href="https://fonts.googleapis.com/css2?family=EB+Garamond:wght@400;600&family=Open+Sans:wght@400;600;700&family=Noto+Serif+SC:wght@400;600&family=Noto+Sans+SC:wght@400;500;700&display=swap" >
 {% endblock %}
@@ -39,6 +39,7 @@ type="image/x-icon">
             <div class="navbar-collapse collapse">
                 {% if session.logged_in %}
                     <ul class="nav navbar-nav navbar-right">
+                        <li><a href="{{ url_for('main.create_post') }}">发布博文</a></li>
                         <li><a href="{{ url_for('main.view_all_days') }}">日期</a>
                         <li><a href="{{ url_for('main.view_all_tags') }}">标签</a></li>
                         <li><a href="{{ url_for('admin.view_admin') }}">管理</a></li>
@@ -47,11 +48,8 @@ type="image/x-icon">
                     </ul>
                 {% else %}
                     <ul class="nav navbar-nav navbar-right">
-                        {% if register %}
                         <li><a href="{{ url_for('auth.register') }}">注册</a></li>
-                        {% else %}
                         <li><a href="{{ url_for('auth.login') }}">登录</a></li>
-                        {% endif %}
                         <li><button class="theme-toggle" id="themeToggle" title="切换主题">☀</button></li>
                     </ul>
                 {% endif %}
@@ -87,6 +85,21 @@ type="image/x-icon">
         </div>
     {% endblock %}
 
+    <audio id="bgMusic" loop preload="auto">
+        <source src="{{ url_for('static', filename='music/bgm.mp3') }}" type="audio/mpeg">
+    </audio>
+
+    <div id="musicPlayer" class="music-player">
+        <button id="musicToggle" class="music-btn" title="播放/暂停">▶</button>
+        <div class="music-info">
+            <span id="musicTitle" class="music-title">背景音乐</span>
+            <input type="range" id="musicProgress" class="music-progress" min="0" max="100" value="0">
+        </div>
+        <div class="music-controls">
+            <input type="range" id="musicVolume" class="music-volume" min="0" max="100" value="70" title="音量">
+        </div>
+    </div>
+
     {% block scripts%}
     {{super()}}
     <script>
@@ -121,6 +134,80 @@ type="image/x-icon">
                 p.style.animation = 'floatUp ' + (Math.random() * 15 + 15) + 's linear ' + (Math.random() * 10) + 's infinite';
                 container.appendChild(p);
             }
+        }
+    })();
+
+    (function() {
+        var audio = document.getElementById('bgMusic');
+        var toggle = document.getElementById('musicToggle');
+        var progress = document.getElementById('musicProgress');
+        var volume = document.getElementById('musicVolume');
+        var title = document.getElementById('musicTitle');
+        if (!audio || !toggle) return;
+
+        var savedVol = localStorage.getItem('musicVolume');
+        if (savedVol !== null) {
+            audio.volume = savedVol / 100;
+            volume.value = savedVol;
+        } else {
+            audio.volume = 0.7;
+        }
+
+        var savedTime = sessionStorage.getItem('musicCurrentTime');
+        if (savedTime && !isNaN(parseFloat(savedTime))) {
+            audio.currentTime = parseFloat(savedTime);
+        }
+
+        toggle.addEventListener('click', function() {
+            if (audio.paused) {
+                audio.play().then(function() {
+                    toggle.textContent = '⏸';
+                    localStorage.setItem('musicPlaying', '1');
+                }).catch(function() {
+                    title.textContent = '播放失败，请检查文件';
+                });
+            } else {
+                audio.pause();
+                toggle.textContent = '▶';
+                localStorage.setItem('musicPlaying', '0');
+            }
+        });
+
+        audio.addEventListener('timeupdate', function() {
+            if (audio.duration && !progress.dragging) {
+                progress.value = (audio.currentTime / audio.duration) * 100;
+                sessionStorage.setItem('musicCurrentTime', audio.currentTime);
+            }
+        });
+
+        progress.addEventListener('mousedown', function() { progress.dragging = true; });
+        progress.addEventListener('mouseup', function() { progress.dragging = false; });
+        progress.addEventListener('input', function() {
+            if (audio.duration) {
+                audio.currentTime = (progress.value / 100) * audio.duration;
+            }
+        });
+
+        volume.addEventListener('input', function() {
+            audio.volume = volume.value / 100;
+            localStorage.setItem('musicVolume', volume.value);
+        });
+
+        audio.addEventListener('ended', function() {
+            toggle.textContent = '▶';
+            localStorage.setItem('musicPlaying', '0');
+        });
+
+        audio.addEventListener('error', function() {
+            title.textContent = '未找到音乐文件';
+            toggle.style.opacity = '0.4';
+        });
+
+        var wasPlaying = localStorage.getItem('musicPlaying') === '1';
+        if (wasPlaying) {
+            audio.play().then(function() {
+                toggle.textContent = '⏸';
+            }).catch(function() {});
         }
     })();
     </script>

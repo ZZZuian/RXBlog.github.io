@@ -10,6 +10,6 @@ class RenameChronofileForm(Form):
 
 
 class RenameAuthorForm(Form):
-    new_name = StringField('输入新的作者名称：', \
+    new_name = StringField('输入新的个人昵称：', \
                            validators=[DataRequired()])
-    submit = SubmitField('重命名作者')
+    submit = SubmitField('更新昵称')

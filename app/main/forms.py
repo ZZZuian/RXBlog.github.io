@@ -1,12 +1,13 @@
 import re
-from flask import Markup
+from markupsafe import Markup
 from flask_wtf import FlaskForm as Form
-from wtforms import StringField, TextAreaField, SubmitField, ValidationError
+from flask_wtf.file import MultipleFileField
+from wtforms import StringField, SubmitField, TextAreaField, ValidationError
 from wtforms.validators import DataRequired, Length
 
 
 class RawEntryForm(Form):
-    raw_entry = StringField('在时间记录本中添加新记录：', validators=[DataRequired()])
+    raw_entry = StringField('发布一条社区动态：', validators=[DataRequired()])
     submit = SubmitField('发布记录')
 
 
@@ -18,20 +19,9 @@ def no_hashtags(form, field):
             <code>#</code> 开头。"))
 
 def use_commas(form, field):
-    tags = field.data.split(' ')
-    items = len(tags)
-    print(items)
-    if items != 1:
-        count = 1
-        for i in tags:
-            print(i)
-            print(i[-1])
-            if i[-1] == ',':
-                print(i[-1])
-                count += 1
-        print(count)
-        if count < items:
-            raise ValidationError(Markup('请使用逗号分隔标签，格式如下：<code>tag1, tag2</code>。'))
+    if field.data and re.search(r'(?<!,)\s+', field.data):
+        raise ValidationError(Markup(
+            '请使用逗号分隔标签，格式如下：<code>tag1, tag2</code>。'))
 
 
 class EditEntryForm(Form):
@@ -42,6 +32,18 @@ class EditEntryForm(Form):
 
 
 class CommentForm(Form):
-    nickname = StringField('昵称', validators=[DataRequired(), Length(max=30)])
     content = TextAreaField('评论内容', validators=[DataRequired(), Length(max=500)])
     submit = SubmitField('发表评论')
+
+
+class DeleteEntryForm(Form):
+    submit = SubmitField('删除记录')
+
+
+class PostForm(Form):
+    title = StringField('标题', validators=[DataRequired(), Length(max=200)])
+    content = TextAreaField('正文', validators=[DataRequired(), Length(max=20000)])
+    tags = StringField('标签（用逗号分隔，无需输入 #）',
+                       validators=[Length(max=300), no_hashtags])
+    images = MultipleFileField('图片（最多 9 张，单张不超过 5MB）')
+    submit = SubmitField('发布博文')

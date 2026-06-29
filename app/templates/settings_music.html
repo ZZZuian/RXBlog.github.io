@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block page_content %}
+
+<div class="settings-layout">
+    <nav class="settings-nav">
+        <a href="{{ url_for('user.settings_profile') }}">个人资料</a>
+        <a href="{{ url_for('user.settings_music') }}" class="active">音乐管理</a>
+        <a href="{{ url_for('user.view_user_profile', user_id=session.user_id) }}">查看主页</a>
+    </nav>
+
+    <div class="settings-panel">
+        <h2>管理音乐</h2>
+
+        <form method="post" enctype="multipart/form-data" class="settings-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="action" value="add">
+
+            <div class="form-group">
+                <label for="title">曲名</label>
+                <input type="text" id="title" name="title" maxlength="100" required>
+            </div>
+
+            <div class="form-group">
+                <label for="artist">艺术家</label>
+                <input type="text" id="artist" name="artist" maxlength="100">
+            </div>
+
+            <div class="form-group">
+                <label for="audio">音频文件</label>
+                <input type="file" id="audio" name="audio" accept=".mp3,.ogg,.wav" required>
+                <p class="help-text">支持 mp3、ogg、wav，不超过 10MB</p>
+            </div>
+
+            <div class="form-group">
+                <label for="cover">封面图片（可选）</label>
+                <input type="file" id="cover" name="cover" accept="image/*">
+                <p class="help-text">建议正方形图片</p>
+            </div>
+
+            <button type="submit" class="btn btn-default">添加音乐</button>
+        </form>
+
+        {% if tracks %}
+        <div class="music-track-list">
+            <h3>已有音乐</h3>
+            {% for track in tracks %}
+            <div class="music-track-item">
+                <div class="music-track-info">
+                    <p class="music-track-title">{{ track.title }}</p>
+                    <p class="music-track-artist">{{ track.artist or '未知艺术家' }} · {{ '已启用' if track.is_enabled else '已禁用' }}</p>
+                </div>
+                <div class="music-track-actions">
+                    <form method="post" style="display: inline;">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <input type="hidden" name="action" value="toggle">
+                        <input type="hidden" name="track_id" value="{{ track.id }}">
+                        <button type="submit" class="music-track-btn">{{ '禁用' if track.is_enabled else '启用' }}</button>
+                    </form>
+                    <form method="post" style="display: inline;">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <input type="hidden" name="action" value="delete">
+                        <input type="hidden" name="track_id" value="{{ track.id }}">
+                        <button type="submit" class="music-track-btn danger" onclick="return confirm('确定删除这首音乐吗？');">删除</button>
+                    </form>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p style="text-align: center; color: var(--text-muted); margin-top: 20px;">还没有添加音乐</p>
+        {% endif %}
+    </div>
+</div>
+
+{% endblock %}

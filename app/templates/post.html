@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block page_content %}
+<div class="page-header"><h1>{{ page_title }}</h1></div>
+
+<form method="post" enctype="multipart/form-data" class="post-editor" novalidate>
+    {{ form.hidden_tag() }}
+    <div class="form-group{% if form.title.errors %} has-error{% endif %}">
+        {{ form.title.label }} {{ form.title(class_='form-control', placeholder='给博文起一个标题') }}
+        {% for error in form.title.errors %}<span class="help-block">{{ error }}</span>{% endfor %}
+    </div>
+    <div class="form-group{% if form.content.errors %} has-error{% endif %}">
+        {{ form.content.label }} {{ form.content(class_='form-control post-content-input', rows=10, placeholder='分享你的想法……') }}
+        {% for error in form.content.errors %}<span class="help-block">{{ error }}</span>{% endfor %}
+    </div>
+    <div class="form-group{% if form.tags.errors %} has-error{% endif %}">
+        {{ form.tags.label }} {{ form.tags(class_='form-control', placeholder='例如：演唱会, Vtuber, 音游') }}
+        {% for error in form.tags.errors %}<span class="help-block">{{ error }}</span>{% endfor %}
+    </div>
+
+    {% if post and post.image_items %}
+    <div class="existing-images">
+        <label>已有图片（勾选后保存即可移除）</label>
+        <div class="image-manage-grid">
+        {% for item in post.image_items %}
+            <label class="image-manage-item">
+                <img src="{{ url_for('static', filename=item.media.file_path) }}" alt="已有图片">
+                <span><input type="checkbox" name="remove_image_ids" value="{{ item.id }}"> 移除</span>
+            </label>
+        {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="form-group{% if form.images.errors %} has-error{% endif %}">
+        {{ form.images.label }}
+        {{ form.images(class_='form-control', accept='.jpg,.jpeg,.png,.gif,.webp') }}
+        <p class="help-block">支持 JPG、PNG、GIF、WebP；最多 9 张，单张不超过 5MB。</p>
+        {% for error in form.images.errors %}<span class="help-block">{{ error }}</span>{% endfor %}
+    </div>
+    {{ form.submit(class_='btn btn-primary btn-lg') }}
+    <a class="btn btn-default btn-lg" href="{{ url_for('main.view_post', post_id=post.id) if post else url_for('main.browse_all_entries') }}">取消</a>
+</form>
+{% endblock %}

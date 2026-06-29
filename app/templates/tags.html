@@ -1,26 +1,36 @@
 {% extends "base.html" %}
 {% block page_content %}
 
-    <div class="page-header">
-        <h1>标签</h1>
-    </div>
+<div class="page-header">
+    <h1>标签发现</h1>
+    <p>通过标签发现不同兴趣的内容</p>
+</div>
 
-    <div>
-        {{ wtf.quick_form(form) }}
-    </div>
+<div class="search-container">
+    <form action="{{ url_for('main.search_posts') }}" method="GET">
+        <span class="search-icon">🔍</span>
+        <input type="text" name="q" class="search-input" placeholder="搜索标题、正文和标签...">
+    </form>
+</div>
 
-    <div>
-    {% if all_tags|length == 0 %}
-        <p>暂无标签。</p>
-    {% else %}
-        <ul>
-        {% for tag in all_tags %}
-            <li><p>
-            <a href="{{ url_for('main.view_entries_for_tag', tag=tag, _external=True) }}">#{{ tag }}</a>
-            </p></li>
-        {% endfor %}
-        </ul>
+{% if not all_tags %}
+<div class="empty-state">
+    <p>暂无标签。发布博文时可以添加标签。</p>
+    {% if session.logged_in %}
+    <a href="{{ url_for('main.create_post') }}" class="btn btn-default">发布第一篇博文</a>
     {% endif %}
+</div>
+{% else %}
+<div class="tags-container">
+    <div class="tags-cloud">
+        {% for tag, count in all_tags %}
+        <a href="{{ url_for('main.view_entries_for_tag', tag=tag) }}" class="tag-item">
+            <span class="tag-name">#{{ tag }}</span>
+            <span class="tag-count">{{ count }}</span>
+        </a>
+        {% endfor %}
     </div>
+</div>
+{% endif %}
 
 {% endblock %}

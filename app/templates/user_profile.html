@@ -1,0 +1,253 @@
+{% extends "base.html" %}
+{% block page_content %}
+
+<div class="user-profile">
+    {% if profile.background_image %}
+    <div class="profile-bg" style="background-image: url('{{ url_for('static', filename=profile.background_image) }}')">
+        <div class="profile-bg-overlay"></div>
+    </div>
+    {% endif %}
+
+    <div class="profile-content">
+        <div class="profile-card">
+            <div class="profile-header">
+                <div class="profile-avatar-wrapper">
+                    {% if profile.avatar %}
+                    <img src="{{ url_for('static', filename=profile.avatar) }}" alt="{{ profile.nickname }}" class="profile-avatar">
+                    {% else %}
+                    <div class="profile-avatar profile-avatar-default">{{ profile.nickname[0] }}</div>
+                    {% endif %}
+                </div>
+                <div class="profile-info">
+                    <h1 class="profile-name">{{ profile.nickname }}</h1>
+                    {% if profile.bio %}
+                    <p class="profile-bio">{{ profile.bio }}</p>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="profile-stats">
+                <div class="stat-item">
+                    <span class="stat-number">{{ post_count }}</span>
+                    <span class="stat-label">文章</span>
+                </div>
+                <div class="stat-divider"></div>
+                <div class="stat-item">
+                    <span class="stat-number">{{ like_count }}</span>
+                    <span class="stat-label">获赞</span>
+                </div>
+                <div class="stat-divider"></div>
+                <div class="stat-item">
+                    <span class="stat-number">{{ comment_count }}</span>
+                    <span class="stat-label">评论</span>
+                </div>
+            </div>
+
+            {% if is_owner %}
+            <div class="profile-actions">
+                <a href="{{ url_for('user.settings_profile') }}" class="btn btn-default">编辑资料</a>
+                <a href="{{ url_for('user.settings_music') }}" class="btn btn-default">管理音乐</a>
+            </div>
+            {% endif %}
+        </div>
+
+        {% if music_tracks %}
+        <div class="music-card" id="musicCard">
+            <div class="music-card-header">
+                <span class="music-card-label">🎵 音乐</span>
+            </div>
+            <div class="music-card-cover" id="musicCover">
+                {% if music_tracks[0].cover_path %}
+                <img src="{{ url_for('static', filename=music_tracks[0].cover_path) }}" alt="封面">
+                {% else %}
+                <div class="music-cover-placeholder">🎵</div>
+                {% endif %}
+            </div>
+            <div class="music-card-info">
+                <p class="music-card-title" id="musicTitle">{{ music_tracks[0].title }}</p>
+                <p class="music-card-artist" id="musicArtist">{{ music_tracks[0].artist or '未知艺术家' }}</p>
+            </div>
+            <div class="music-card-controls">
+                <button id="prevTrack" class="music-control-btn" title="上一首">⏮</button>
+                <button id="playPause" class="music-control-btn music-play-btn" title="播放/暂停">▶</button>
+                <button id="nextTrack" class="music-control-btn" title="下一首">⏭</button>
+            </div>
+            <div class="music-card-progress">
+                <input type="range" id="musicProgress" min="0" max="100" value="0">
+                <span id="currentTime">0:00</span>
+                <span id="totalTime">0:00</span>
+            </div>
+        </div>
+
+        <script>
+        (function() {
+            var tracks = [
+                {% for track in music_tracks %}
+                {
+                    id: {{ track.id }},
+                    title: {{ track.title|tojson }},
+                    artist: {{ track.artist|tojson }},
+                    audio: '{{ url_for("static", filename=track.audio_path) }}',
+                    cover: {{ url_for("static", filename=track.cover_path)|tojson if track.cover_path else '""' }}
+                }{% if not loop.last %},{% endif %}
+                {% endfor %}
+            ];
+
+            var audio = new Audio();
+            var currentIndex = 0;
+            var isPlaying = false;
+
+            var titleEl = document.getElementById('musicTitle');
+            var artistEl = document.getElementById('musicArtist');
+            var coverEl = document.getElementById('musicCover');
+            var playBtn = document.getElementById('playPause');
+            var progressEl = document.getElementById('musicProgress');
+            var currentTimeEl = document.getElementById('currentTime');
+            var totalTimeEl = document.getElementById('totalTime');
+
+            function loadTrack(index) {
+                if (index < 0) index = tracks.length - 1;
+                if (index >= tracks.length) index = 0;
+                currentIndex = index;
+                var track = tracks[currentIndex];
+
+                audio.src = track.audio;
+                titleEl.textContent = track.title;
+                artistEl.textContent = track.artist || '未知艺术家';
+
+                if (track.cover) {
+                    coverEl.innerHTML = '<img src="' + track.cover + '" alt="封面">';
+                } else {
+                    coverEl.innerHTML = '<div class="music-cover-placeholder">🎵</div>';
+                }
+
+                localStorage.setItem('userMusicIndex', currentIndex);
+                localStorage.setItem('userMusicTitle', track.title);
+            }
+
+            function togglePlay() {
+                if (isPlaying) {
+                    audio.pause();
+                    playBtn.textContent = '▶';
+                    coverEl.classList.remove('spinning');
+                } else {
+                    audio.play().then(function() {
+                        playBtn.textContent = '⏸';
+                        coverEl.classList.add('spinning');
+                    }).catch(function() {});
+                }
+                isPlaying = !isPlaying;
+            }
+
+            playBtn.addEventListener('click', togglePlay);
+
+            document.getElementById('prevTrack').addEventListener('click', function() {
+                loadTrack(currentIndex - 1);
+                if (isPlaying) audio.play();
+            });
+
+            document.getElementById('nextTrack').addEventListener('click', function() {
+                loadTrack(currentIndex + 1);
+                if (isPlaying) audio.play();
+            });
+
+            audio.addEventListener('timeupdate', function() {
+                if (audio.duration) {
+                    progressEl.value = (audio.currentTime / audio.duration) * 100;
+                    currentTimeEl.textContent = formatTime(audio.currentTime);
+                    totalTimeEl.textContent = formatTime(audio.duration);
+                }
+            });
+
+            progressEl.addEventListener('input', function() {
+                if (audio.duration) {
+                    audio.currentTime = (progressEl.value / 100) * audio.duration;
+                }
+            });
+
+            audio.addEventListener('ended', function() {
+                loadTrack(currentIndex + 1);
+                audio.play();
+            });
+
+            function formatTime(seconds) {
+                var min = Math.floor(seconds / 60);
+                var sec = Math.floor(seconds % 60);
+                return min + ':' + (sec < 10 ? '0' : '') + sec;
+            }
+
+            loadTrack(0);
+
+            var savedIndex = localStorage.getItem('userMusicIndex');
+            if (savedIndex && parseInt(savedIndex) < tracks.length) {
+                loadTrack(parseInt(savedIndex));
+            }
+        })();
+        </script>
+        {% endif %}
+
+        {% if posts %}
+        <div class="profile-posts">
+            <h2>公开博文</h2>
+            <div class="post-grid">
+                {% for post in posts %}{% include '_post_card.html' %}{% endfor %}
+            </div>
+        </div>
+        {% else %}
+        <div class="empty-state">
+            <p>暂无公开博文。</p>
+        </div>
+        {% endif %}
+
+        <div class="guestbook-section">
+            <h2>访客留言</h2>
+
+            {% if session.logged_in %}
+            <div class="guestbook-form">
+                <form method="post" action="{{ url_for('user.post_guestbook', user_id=profile_user.id) }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <div class="form-group">
+                        <textarea name="content" class="form-control" rows="3" placeholder="写下你的留言..." maxlength="500" required></textarea>
+                    </div>
+                    <button type="submit" class="btn btn-default">发表留言</button>
+                </form>
+            </div>
+            {% else %}
+            <p class="login-hint"><a href="{{ url_for('auth.login', next=request.url) }}">登录</a>后可以留言。</p>
+            {% endif %}
+
+            {% if guestbook_messages %}
+            <div class="guestbook-list">
+                {% for message in guestbook_messages %}
+                <div class="guestbook-item" id="msg-{{ message.id }}">
+                    <div class="guestbook-header">
+                        <div class="guestbook-avatar-container">
+                            {% if message.author and message.author.profile and message.author.profile.avatar %}
+                            <img src="{{ url_for('static', filename=message.author.profile.avatar) }}" alt="{{ message.nickname }}" class="guestbook-avatar">
+                            {% else %}
+                            <div class="guestbook-avatar guestbook-avatar-default">{{ message.nickname[0] }}</div>
+                            {% endif %}
+                        </div>
+                        <div class="guestbook-meta">
+                            <span class="guestbook-nickname">{{ message.nickname }}</span>
+                            <span class="guestbook-time">{{ message.created_at.strftime('%Y-%m-%d %H:%M') }}</span>
+                        </div>
+                        {% if session.user_id == message.author_id or is_owner or is_admin %}
+                        <form method="post" action="{{ url_for('user.delete_guestbook', message_id=message.id) }}" class="guestbook-delete-form">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button type="submit" class="comment-delete-btn" title="删除留言" onclick="return confirm('确定删除这条留言吗？');">×</button>
+                        </form>
+                        {% endif %}
+                    </div>
+                    <div class="guestbook-body">{{ message.content }}</div>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="empty-guestbook">还没有留言，来留下第一条吧！</p>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+{% endblock %}

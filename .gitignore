@@ -22,5 +22,9 @@ Thumbs.db
 /venv
 /__pycache__
 
+# User uploads (keep directory structure only)
+app/static/uploads/posts/*
+!app/static/uploads/posts/.gitkeep
+
 # Specific files #
 ######################

@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block page_content %}
+<div class="page-header">
+    <h1>搜索结果</h1>
+    <p>搜索关键词：{{ query }}</p>
+</div>
+
+<div class="search-container">
+    <form action="{{ url_for('main.search_posts') }}" method="GET">
+        <span class="search-icon">🔍</span>
+        <input type="text" name="q" class="search-input" placeholder="搜索标题、正文和标签..." value="{{ query }}">
+    </form>
+</div>
+
+{% if not entries_for_page %}
+<div class="empty-state">
+    <p>未找到与 "{{ query }}" 相关的内容。</p>
+    <a href="{{ url_for('main.browse_all_entries') }}" class="btn btn-default">返回首页</a>
+</div>
+{% else %}
+<div class="post-grid">
+{% for post in entries_for_page %}{% include '_post_card.html' %}{% endfor %}
+</div>
+
+<div class="feed-pagination">
+    {% if prev_page %}
+    <a class="btn btn-default" href="{{ url_for('main.search_posts', q=query, page=prev_page) }}">上一页</a>
+    {% else %}
+    <span></span>
+    {% endif %}
+    {% if next_page %}
+    <a class="btn btn-default" href="{{ url_for('main.search_posts', q=query, page=next_page) }}">下一页</a>
+    {% endif %}
+</div>
+{% endif %}
+{% endblock %}

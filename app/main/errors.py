@@ -1,8 +1,16 @@
 from flask import render_template
-from tinydb import Query
-from app.db import get_record
 from . import main
 from app.details import get_details
+
+
+@main.app_errorhandler(403)
+def forbidden(e):
+    return render_template('403.html', details=get_details()), 403
+
+
+@main.app_errorhandler(413)
+def file_too_large(e):
+    return render_template('413.html', details=get_details()), 413
 
 @main.app_errorhandler(404)
 def page_not_found(e):

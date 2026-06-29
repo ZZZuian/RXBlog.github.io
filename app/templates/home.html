@@ -1,81 +1,33 @@
 {% extends "base.html" %}
 {% block page_content %}
+<div class="page-header community-header">
+    <div><h1>社区最新动态</h1><p>发现来自不同作者的公开博文。</p></div>
+    {% if session.logged_in %}<a class="btn btn-primary" href="{{ url_for('main.create_post') }}">发布博文</a>{% endif %}
+</div>
 
-    <div class="page-header">
-        <h1>动态</h1>
-    </div>
+<div class="search-container">
+    <form action="{{ url_for('main.search_posts') }}" method="GET">
+        <span class="search-icon">🔍</span>
+        <input type="text" name="q" class="search-input" placeholder="搜索标题、正文和标签...">
+    </form>
+</div>
 
-    <div>
-        {{ wtf.quick_form(form) }}
-    </div>
+{% if not entries_for_page %}
+<div class="empty-state"><p>社区中暂无内容。</p>{% if session.logged_in %}<a href="{{ url_for('main.create_post') }}">发布第一篇博文</a>{% endif %}</div>
+{% else %}
+<div class="post-grid">
+{% for post in entries_for_page %}{% include '_post_card.html' %}{% endfor %}
+</div>
+{% endif %}
 
-    <div>
-    {% if not entries_for_page %}
-        <p>时间记录本中暂无内容。</p>
+<div class="feed-pagination">
+    {% if prev_page %}
+    <a class="btn btn-default" href="{{ url_for('main.view_entries_for_page', page=prev_page) }}">上一页</a>
     {% else %}
-        <ul>
-        {% for entry in entries_for_page %}
-            <li class="entry-item"><p><a href="{{ url_for('main.view_entries_for_day', day=entry['timestamp'][:10], _external=True) }}">{{ entry['timestamp'][:10] }}</a> at <a href="{{ url_for('main.view_single_entry', timestamp=entry['timestamp'], _external=True) }}">{{ entry['timestamp'][11:] }}</a>:</br>{{entry['entry']}}</br>
-            标签:
-                {% if entry['tags']|length != 0 %}
-                    {% for tag in entry['tags'] %}
-                        <a href="{{ url_for('main.view_entries_for_tag', tag=tag, _external=True) }}">#{{ tag }}</a>
-                    {% endfor %}
-                {% else %}
-                    无
-                {% endif %}
-                <span class="like-btn" data-timestamp="{{ entry['timestamp'] }}">
-                    <span class="like-icon">♡</span>
-                    <span class="like-count">{{ entry.get('likes', 0) }}</span>
-                </span>
-                <a class="comment-link" href="{{ url_for('main.view_single_entry', timestamp=entry['timestamp'], _external=True) }}">
-                    💬 {{ comment_counts.get(entry['timestamp'], 0) }}
-                </a>
-                </p></li>
-        {% endfor %}
-        </ul>
+    <span></span>
     {% endif %}
-    </div>
-    </br>
-    <div>
-        {% if next_page %}
-        <p><a class="btn btn-default" href="{{ url_for('main.view_entries_for_page', page=next_page, _external=True) }}">更早的记录</a></p>
-        {% endif %}
-    </div>
-
-    <script>
-    document.querySelectorAll('.like-btn').forEach(function(btn) {
-        var ts = btn.getAttribute('data-timestamp');
-        var icon = btn.querySelector('.like-icon');
-        var count = btn.querySelector('.like-count');
-        var likedKey = 'liked_' + ts;
-        if (localStorage.getItem(likedKey)) {
-            icon.textContent = '♥';
-            icon.classList.add('liked');
-        }
-        btn.addEventListener('click', function() {
-            var isLiked = localStorage.getItem(likedKey);
-            var action = isLiked ? 'unlike' : 'like';
-            fetch('/api/like/' + encodeURIComponent(ts), {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({action: action})
-            })
-            .then(function(r){ return r.json(); })
-            .then(function(data){
-                count.textContent = data.likes;
-                if (isLiked) {
-                    icon.textContent = '♡';
-                    icon.classList.remove('liked');
-                    localStorage.removeItem(likedKey);
-                } else {
-                    icon.textContent = '♥';
-                    icon.classList.add('liked');
-                    localStorage.setItem(likedKey, '1');
-                }
-            });
-        });
-    });
-    </script>
-
+    {% if next_page %}
+    <a class="btn btn-default" href="{{ url_for('main.view_entries_for_page', page=next_page) }}">下一页</a>
+    {% endif %}
+</div>
 {% endblock %}

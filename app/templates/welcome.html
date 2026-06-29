@@ -12,7 +12,8 @@
         <p>可以查看最近的记录、按日期查看、查看单条记录、按标签筛选记录，以及查看所有标签列表。</p></br>
         <p>默认为私有模式，请先<a href="{{ url_for('auth.register') }}">注册</a>以开始使用 Chronoflask。</p>
         {% else %}
-        <h2>请先<a href="{{ url_for('auth.login') }}">登录</a>。</h2>
+        <h2>欢迎回来，请先<a href="{{ url_for('auth.login') }}">登录</a>。</h2>
+        <p>第一次来到这里？也可以<a href="{{ url_for('auth.register') }}">创建新账号</a>。</p>
         {% endif %}
     </div>
 

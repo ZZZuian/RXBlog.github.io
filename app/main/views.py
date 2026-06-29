@@ -1,214 +1,409 @@
-import os
-from flask import Flask, session, g, redirect, url_for, \
-                  render_template, flash, Blueprint, current_app, abort, jsonify, request
-from flask_bootstrap import Bootstrap
-from datetime import datetime
-from datetime import datetime as dt
-from app.db import *
-from . import main
-from .forms import RawEntryForm, EditEntryForm, CommentForm
-from app.parse import *
-from app.pagination import *
+from datetime import datetime, timezone
+
+from flask import (abort, flash, jsonify, redirect, render_template, request,
+                   session, url_for)
+from sqlalchemy import func, select
+
 from app.decorators import login_required
 from app.details import get_details
+from app.extensions import db
+from app.models import Comment, Post, PostLike, User
+from app.parse import parse_input
+from app.uploads import (UploadValidationError, cleanup_paths,
+                         media_absolute_path, prepare_images, store_images)
+from . import main
+from .forms import (CommentForm, DeleteEntryForm, PostForm, RawEntryForm)
 
 
-def get_comment_counts(timestamps):
-    counts = {}
-    for ts in timestamps:
-        comments = search_records('comments', Query().entry_timestamp == ts)
-        counts[ts] = len(comments)
-    return counts
+PER_PAGE = 10
+
+
+def _parse_tags(raw_tags):
+    tags = []
+    for value in (raw_tags or '').replace('，', ',').split(','):
+        tag = value.strip()
+        if tag and tag not in tags:
+            tags.append(tag)
+    return tags[:10]
+
+
+def _add_image_error(form, message):
+    errors = list(form.images.errors)
+    errors.append(message)
+    form.images.errors = errors
+
+
+def _published_post(post_id):
+    return db.session.scalar(select(Post).where(
+        Post.id == post_id, Post.status == 'published'))
+
+
+def _post_by_timestamp(timestamp):
+    return db.session.scalar(
+        select(Post).where(
+            func.strftime('%Y-%m-%d %H:%M:%S', Post.created_at) == timestamp,
+            Post.status == 'published'
+        ).order_by(Post.id)
+    )
+
+
+def _comment_counts(post_ids):
+    if not post_ids:
+        return {}
+    rows = db.session.execute(
+        select(Comment.post_id, func.count(Comment.id))
+        .where(Comment.post_id.in_(post_ids), Comment.status == 'visible')
+        .group_by(Comment.post_id)
+    )
+    return {post_id: count for post_id, count in rows}
+
+
+def _render_feed(template, page, **context):
+    posts = page.items
+    context.update(
+        entries_for_page=posts,
+        comment_counts=_comment_counts([post.id for post in posts]),
+        next_page=page.next_num if page.has_next else None,
+        prev_page=page.prev_num if page.has_prev else None,
+        details=get_details()
+    )
+    return render_template(template, **context)
 
 
 @main.route('/', methods=['GET', 'POST'])
 def browse_all_entries():
-    '''Returns all entries (most recent entry at the top of the page).'''
-    details = get_details()
-    if not session.get('logged_in'):
-        if details:
-            register = False
-        else:
-            register = True
-            details = {'chronofile_name': current_app.config['DEFAULT_NAME'], \
-                       'author_name': current_app.config['DEFAULT_AUTHOR']}
-        return render_template('welcome.html', details=details, \
-                               register=register)
     form = RawEntryForm()
-    # Try to validate form and create a new entry
-    if form.validate_on_submit():
-        return parse_input(form.raw_entry.data, datetime.utcnow())
-    # Otherwise, show the latest entries
-    page = 1
-    # Get entries for the given page
-    entries_for_page = get_entries_for_page(page)
-    # Check if there's another page, returns None if not
-    next_page = check_next_page(page)
-    timestamps = [e['timestamp'] for e in entries_for_page]
-    comment_counts = get_comment_counts(timestamps)
-    return render_template('home.html', entries_for_page=entries_for_page, \
-        form=form, details=details, next_page=next_page, comment_counts=comment_counts)
+    if request.method == 'POST':
+        if not session.get('logged_in'):
+            flash('请先登录后再发布内容。')
+            return redirect(url_for('auth.login', next=url_for('main.browse_all_entries')))
+        if form.validate_on_submit():
+            return parse_input(form.raw_entry.data, datetime.now(timezone.utc))
+    page_number = request.args.get('page', 1, type=int)
+    statement = (select(Post).where(Post.status == 'published')
+                 .order_by(Post.created_at.desc(), Post.id.desc()))
+    page = db.paginate(statement, page=page_number, per_page=PER_PAGE,
+                       error_out=False)
+    return _render_feed('home.html', page, form=form)
 
 
-@main.route('page/<page>', methods=['GET', 'POST'])
+@main.route('/post/new', methods=['GET', 'POST'])
 @login_required
+def create_post():
+    form = PostForm()
+    if form.validate_on_submit():
+        created_paths = []
+        try:
+            prepared = prepare_images(form.images.data or [])
+            post = Post(author_id=session['user_id'], title=form.title.data.strip(),
+                        content=form.content.data.strip(), board='public',
+                        tags=_parse_tags(form.tags.data), status='published')
+            db.session.add(post)
+            db.session.flush()
+            created_paths = store_images(post, session['user_id'], prepared)
+            db.session.commit()
+            flash('博文发布成功。')
+            return redirect(url_for('main.view_post', post_id=post.id))
+        except UploadValidationError as error:
+            db.session.rollback()
+            cleanup_paths(created_paths)
+            _add_image_error(form, str(error))
+        except Exception:
+            db.session.rollback()
+            cleanup_paths(created_paths)
+            raise
+    return render_template('post.html', form=form, details=get_details(),
+                           page_title='发布博文', post=None)
+
+
+@main.route('/page/<int:page>', methods=['GET', 'POST'])
 def view_entries_for_page(page):
-    '''Returns entries for given page in reverse chronological order.'''
-    try:
-        int(page)
-    except:
-        TypeError
-        return abort(404)
-    page = int(page)
-    if page == 1:
+    if page <= 1:
         return redirect(url_for('main.browse_all_entries'))
-    details = get_details()
     form = RawEntryForm()
-    if form.validate_on_submit():
-        return parse_input(form.raw_entry.data, datetime.utcnow())
-    # Get entries for the given page
-    entries_for_page = get_entries_for_page(page)
-    # Check if there's another page, returns None if not
-    next_page = check_next_page(page)
-    prev_page = page - 1
-    timestamps = [e['timestamp'] for e in entries_for_page]
-    comment_counts = get_comment_counts(timestamps)
-    return render_template('page.html', form=form, \
-        entries_for_page=entries_for_page, details=details, \
-        page=page, next_page=next_page, prev_page=prev_page, comment_counts=comment_counts)
+    if request.method == 'POST':
+        if not session.get('logged_in'):
+            return redirect(url_for('auth.login', next=request.url))
+        if form.validate_on_submit():
+            return parse_input(form.raw_entry.data, datetime.now(timezone.utc))
+    statement = (select(Post).where(Post.status == 'published')
+                 .order_by(Post.created_at.desc(), Post.id.desc()))
+    pagination = db.paginate(statement, page=page, per_page=PER_PAGE,
+                             error_out=False)
+    if not pagination.items:
+        abort(404)
+    return _render_feed('page.html', pagination, form=form, page=page)
 
 
-@main.route('day/<day>', methods=['GET', 'POST'])
-@login_required
+@main.route('/day/<day>', methods=['GET'])
 def view_entries_for_day(day):
-    '''Returns entries for given day in chronological order.'''
-    details = get_details()
-    form = RawEntryForm()
-    if form.validate_on_submit():
-        return parse_input(form.raw_entry.data, datetime.utcnow())
-    entries_for_day = search_records('entries', Query().timestamp.all([day]))
-    if not entries_for_day:
-        return abort(404)
-    timestamps = [e['timestamp'] for e in entries_for_day]
-    comment_counts = get_comment_counts(timestamps)
-    return render_template('day.html', form=form, day=day, \
-                           entries_for_day=entries_for_day, details=details, comment_counts=comment_counts)
+    posts = db.session.scalars(
+        select(Post).where(Post.status == 'published',
+                           func.date(Post.created_at) == day)
+        .order_by(Post.created_at.asc(), Post.id.asc())
+    ).all()
+    if not posts:
+        abort(404)
+    return render_template('day.html', entries_for_day=posts, day=day,
+                           details=get_details(),
+                           comment_counts=_comment_counts([p.id for p in posts]))
 
 
-@main.route('timestamp/<timestamp>', methods=['GET', 'POST'])
-@login_required
-def view_single_entry(timestamp):
-    '''Return a single entry based on given timestamp.'''
-    entry = get_record('entries', Query().timestamp == timestamp)
-    if not entry:
-        return abort(404)
-    form = RawEntryForm()
-    if form.validate_on_submit():
-        return parse_input(form.raw_entry.data, datetime.utcnow())
+@main.route('/post/<int:post_id>', methods=['GET', 'POST'])
+def view_post(post_id):
+    post = _published_post(post_id)
+    if not post:
+        abort(404)
     comment_form = CommentForm()
     if comment_form.validate_on_submit():
-        insert_record('comments', {
-            'entry_timestamp': timestamp,
-            'nickname': comment_form.nickname.data,
-            'content': comment_form.content.data,
-            'created_at': dt.now().strftime('%Y-%m-%d %H:%M:%S')
-        })
+        if not session.get('logged_in'):
+            flash('请先登录后再评论。')
+            return redirect(url_for('auth.login', next=request.url))
+        comment = Comment(post_id=post.id, author_id=session['user_id'],
+                          content=comment_form.content.data)
+        db.session.add(comment)
+        db.session.commit()
         flash('评论发表成功。')
-        return redirect(url_for('main.view_single_entry', timestamp=timestamp))
-    comments = search_records('comments', Query().entry_timestamp == timestamp)
-    details = get_details()
-    return render_template('entry.html', form=form, timestamp=timestamp, \
-                           entry=entry, details=details, \
-                           comment_form=comment_form, comments=comments)
+        return redirect(url_for('main.view_post', post_id=post.id))
+    comments = db.session.scalars(
+        select(Comment).where(Comment.post_id == post.id,
+                              Comment.status == 'visible')
+        .order_by(Comment.created_at.asc(), Comment.id.asc())
+    ).all()
+    liked = bool(session.get('user_id') and db.session.get(
+        PostLike, (session['user_id'], post.id)))
+    
+    is_admin = False
+    if session.get('logged_in'):
+        user = db.session.get(User, session['user_id'])
+        is_admin = user and user.role == 'admin'
+    
+    return render_template('entry.html', entry=post, post=post,
+                           details=get_details(), comments=comments,
+                           comment_form=comment_form,
+                           delete_form=DeleteEntryForm(), liked=liked,
+                           is_admin=is_admin)
 
 
-@main.route('timestamp/<timestamp>/edit', methods=['GET', 'POST'])
+@main.route('/timestamp/<timestamp>')
+def view_single_entry(timestamp):
+    """Redirect legacy timestamp links to the stable post ID route."""
+    try:
+        datetime.strptime(timestamp, '%Y-%m-%d %H:%M:%S')
+    except ValueError:
+        abort(404)
+    post = _post_by_timestamp(timestamp)
+    if not post:
+        abort(404)
+    return redirect(url_for('main.view_post', post_id=post.id), code=301)
+
+
+@main.route('/post/<int:post_id>/edit', methods=['GET', 'POST'])
+@login_required
+def edit_post(post_id):
+    post = _published_post(post_id)
+    if not post:
+        abort(404)
+    if post.author_id != session['user_id']:
+        abort(403)
+    form = PostForm()
+    if form.validate_on_submit():
+        selected_ids = {int(value) for value in
+                        request.form.getlist('remove_image_ids')
+                        if value.isdigit()}
+        remove_items = [item for item in post.image_items
+                        if item.id in selected_ids]
+        existing_count = (len(post.image_items) + len(post.images or []) -
+                          len(remove_items))
+        created_paths = []
+        removed_paths = [media_absolute_path(item.media)
+                         for item in remove_items]
+        try:
+            prepared = prepare_images(form.images.data or [], existing_count)
+            post.title = form.title.data.strip()
+            post.content = form.content.data.strip()
+            post.board = 'public'
+            post.tags = _parse_tags(form.tags.data)
+            post.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
+            for item in remove_items:
+                media = item.media
+                post.image_items.remove(item)
+                db.session.delete(media)
+            for index, item in enumerate(post.image_items):
+                item.sort_order = index
+            created_paths = store_images(post, session['user_id'], prepared)
+            db.session.commit()
+            cleanup_paths(removed_paths)
+            flash('博文已更新。')
+            return redirect(url_for('main.view_post', post_id=post.id))
+        except UploadValidationError as error:
+            db.session.rollback()
+            cleanup_paths(created_paths)
+            _add_image_error(form, str(error))
+        except Exception:
+            db.session.rollback()
+            cleanup_paths(created_paths)
+            raise
+    if request.method == 'GET':
+        form.title.data = post.title or ''
+        form.content.data = post.content
+        form.tags.data = ', '.join(post.tags or [])
+        form.submit.label.text = '保存修改'
+    return render_template('post.html', form=form, post=post,
+                           page_title='编辑博文', details=get_details())
+
+
+@main.route('/timestamp/<timestamp>/edit')
 @login_required
 def edit_entry(timestamp):
-    '''Edit an entry and return a view of the edited entry'''
-    entry = get_record('entries', Query().timestamp == timestamp)
-    if not entry:
-        return abort(404)
-    form = EditEntryForm()
-    if form.validate_on_submit():
-        # Split comma-delimted string of tags into a list
-        # Delete spaces at the start of tags if necessary
-        tags = form.new_tags.data.split(", ")
-        update_record('entries', {'entry': form.new_entry.data, \
-            'tags': tags}, (Query().creator_id == 1) & \
-            (Query().timestamp == timestamp))
-        flash('记录已更新。')
-        update_pagination()
-        return redirect(url_for('main.view_single_entry', timestamp=timestamp))
-    form.new_entry.default = entry['entry']
-    form.new_tags.default = ', '.join(entry['tags'])
-    form.process()
-    details = get_details()
-    return render_template('edit_entry.html', form=form, timestamp=timestamp, \
-        details=details)
+    try:
+        datetime.strptime(timestamp, '%Y-%m-%d %H:%M:%S')
+    except ValueError:
+        abort(404)
+    post = _post_by_timestamp(timestamp)
+    if not post:
+        abort(404)
+    return redirect(url_for('main.edit_post', post_id=post.id), code=301)
 
 
-@main.route('tags', methods=['GET', 'POST'])
+@main.route('/post/<int:post_id>/delete', methods=['POST'])
 @login_required
+def delete_post(post_id):
+    post = _published_post(post_id)
+    if not post:
+        abort(404)
+    if post.author_id != session['user_id']:
+        abort(403)
+    form = DeleteEntryForm()
+    if not form.validate_on_submit():
+        abort(400)
+    removed_paths = [media_absolute_path(item.media)
+                     for item in post.image_items]
+    for item in list(post.image_items):
+        media = item.media
+        post.image_items.remove(item)
+        db.session.delete(media)
+    post.status = 'deleted'
+    post.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
+    db.session.commit()
+    cleanup_paths(removed_paths)
+    flash('记录已删除。')
+    return redirect(url_for('main.browse_all_entries'))
+
+
+@main.route('/search')
+def search_posts():
+    query = request.args.get('q', '').strip()
+    if not query:
+        return redirect(url_for('main.browse_all_entries'))
+    
+    page_number = request.args.get('page', 1, type=int)
+    
+    search_pattern = f'%{query}%'
+    statement = (
+        select(Post)
+        .where(
+            Post.status == 'published',
+            db.or_(
+                Post.title.ilike(search_pattern),
+                Post.content.ilike(search_pattern),
+                Post.tags.cast(db.String).ilike(search_pattern)
+            )
+        )
+        .order_by(Post.created_at.desc(), Post.id.desc())
+    )
+    
+    page = db.paginate(statement, page=page_number, per_page=PER_PAGE,
+                       error_out=False)
+    return _render_feed('search.html', page, query=query,
+                        details=get_details())
+
+
+@main.route('/tags')
 def view_all_tags():
-    details = get_details()
-    form = RawEntryForm()
-    if form.validate_on_submit():
-        return parse_input(form.raw_entry.data, datetime.utcnow())
-    all_entries = search_records('entries', \
-                                 Query().creator_id == session.get('user_id'))
-    all_tags = list()
-    for entry in all_entries:
-        for tag in entry['tags']:
-            if tag not in all_tags:
-                all_tags.append(tag)
-    all_tags.sort()
-    return render_template('tags.html', all_tags=all_tags, form=form, \
-                           details=details)
+    posts = db.session.scalars(select(Post).where(
+        Post.status == 'published')).all()
+    tag_counts = {}
+    for post in posts:
+        for tag in (post.tags or []):
+            tag_counts[tag] = tag_counts.get(tag, 0) + 1
+    all_tags = sorted(tag_counts.items(), key=lambda x: -x[1])
+    return render_template('tags.html', all_tags=all_tags, details=get_details())
 
 
-@main.route('days', methods=['GET', 'POST'])
-@login_required
+@main.route('/days')
 def view_all_days():
-    details = get_details()
-    form = RawEntryForm()
-    if form.validate_on_submit():
-        return parse_input(form.raw_entry.data, datetime.utcnow())
-    all_entries = search_records('entries', \
-                                 Query().creator_id == session.get('user_id'))
-    all_days = list()
-    for entry in all_entries:
-        if entry['timestamp'][:10] not in all_days:
-            all_days.append(entry['timestamp'][:10])
-    return render_template('days.html', all_days=all_days, form=form, \
-                           details=details)
+    days = db.session.scalars(
+        select(func.date(Post.created_at)).where(Post.status == 'published')
+        .distinct().order_by(func.date(Post.created_at).desc())
+    ).all()
+    return render_template('days.html', all_days=days, details=get_details())
 
 
-@main.route('tags/<tag>', methods=['GET', 'POST'])
-@login_required
+@main.route('/tags/<tag>')
 def view_entries_for_tag(tag):
-    '''Return entries for given tag in chronological order.'''
-    details = get_details()
-    form = RawEntryForm()
-    if form.validate_on_submit():
-        return parse_input(form.raw_entry.data, datetime.utcnow())
-    entries_for_tag = search_records('entries', Query().tags.all([tag]))
-    if not entries_for_tag:
-        return abort(404)
-    return render_template('tag.html', form=form, tag=tag, \
-                           entries_for_tag=entries_for_tag, details=details)
+    posts = db.session.scalars(
+        select(Post).where(Post.status == 'published')
+        .order_by(Post.created_at.desc(), Post.id.desc())
+    ).all()
+    posts = [post for post in posts if tag in (post.tags or [])]
+    if not posts:
+        abort(404)
+    return render_template('tag.html', entries_for_tag=posts, tag=tag,
+                           details=get_details(),
+                           comment_counts=_comment_counts([p.id for p in posts]))
+
+
+@main.route('/api/like/<int:post_id>', methods=['POST'])
+@login_required
+def like_post(post_id):
+    post = _published_post(post_id)
+    if not post:
+        return jsonify({'error': 'not found'}), 404
+    key = (session['user_id'], post.id)
+    like = db.session.get(PostLike, key)
+    action = request.get_json(silent=True) or {}
+    if action.get('action') == 'unlike':
+        if like:
+            db.session.delete(like)
+        liked = False
+    else:
+        if not like:
+            db.session.add(PostLike(user_id=session['user_id'], post_id=post.id))
+        liked = True
+    db.session.commit()
+    return jsonify({'likes': post.likes_count, 'liked': liked})
 
 
 @main.route('/api/like/<timestamp>', methods=['POST'])
+@login_required
 def like_entry(timestamp):
-    entry = get_record('entries', Query().timestamp == timestamp)
-    if not entry:
+    try:
+        datetime.strptime(timestamp, '%Y-%m-%d %H:%M:%S')
+    except ValueError:
         return jsonify({'error': 'not found'}), 404
-    action = request.json.get('action', 'like') if request.is_json else 'like'
-    current_likes = entry.get('likes', 0)
-    if action == 'unlike':
-        current_likes = max(0, current_likes - 1)
-    else:
-        current_likes += 1
-    update_record('entries', {'likes': current_likes}, Query().timestamp == timestamp)
-    return jsonify({'likes': current_likes})
+    post = _post_by_timestamp(timestamp)
+    if not post:
+        return jsonify({'error': 'not found'}), 404
+    return like_post(post.id)
+
+
+@main.route('/comment/<int:comment_id>/delete', methods=['POST'])
+@login_required
+def delete_comment(comment_id):
+    comment = db.session.get(Comment, comment_id)
+    if not comment:
+        abort(404)
+    
+    user = db.session.get(User, session['user_id'])
+    is_author = comment.author_id == session['user_id']
+    is_admin = user and user.role == 'admin'
+    
+    if not is_author and not is_admin:
+        abort(403)
+    
+    post_id = comment.post_id
+    comment.status = 'deleted'
+    db.session.commit()
+    flash('评论已删除。')
+    return redirect(url_for('main.view_post', post_id=post_id))

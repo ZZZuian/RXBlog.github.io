@@ -25,7 +25,7 @@ def rename_chronofile():
     if form.validate_on_submit():
         update_record('admin', {'chronofile_name': form.new_name.data}, \
                       Query().creator_id == session.get('user_id'))
-        flash('Chronfile name updated.')
+        flash('时间记录本名称已更新。')
         return redirect(url_for('admin.view_admin'))
     return render_template('rename_chronofile.html', \
                            form=form, details=details)
@@ -39,6 +39,6 @@ def rename_author():
     if form.validate_on_submit():
         test=update_record('admin', {'author_name': form.new_name.data}, \
                            Query().creator_id == session.get('user_id'))
-        flash('Author name updated.')
+        flash('作者名称已更新。')
         return redirect(url_for('admin.view_admin'))
     return render_template('rename_author.html', form=form, details=details)

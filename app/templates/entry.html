@@ -10,18 +10,18 @@
     </div>
 
     <div>
-        <p>Text: {{entry['entry']}}</br>
-        Tags:
+        <p>内容：{{entry['entry']}}</br>
+        标签:
             {% if entry['tags']|length != 0 %}
                     {% for tag in entry['tags'] %}
                         <a href="{{ url_for('main.view_entries_for_tag', tag=tag, _external=True) }}">#{{ tag }}</a>
                     {% endfor %}
                 {% else %}
-                    none
+                    无
                 {% endif %}
                 </p></li>
         </p>
-        <a class="btn btn-default" href="{{ url_for('main.edit_entry', timestamp=timestamp, _external=True) }}">Edit entry</a>
+        <a class="btn btn-default" href="{{ url_for('main.edit_entry', timestamp=timestamp, _external=True) }}">编辑记录</a>
     </div>
 
 {% endblock %}

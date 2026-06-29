@@ -2,7 +2,7 @@
 {% block page_content %}
 
     <div class="page-header">
-        <h1>Days</h1>
+        <h1>日期</h1>
     </div>
 
     <div>
@@ -11,7 +11,7 @@
 
     <div>
     {% if all_days|length == 0 %}
-        <p>No entries yet.</p>
+        <p>暂无记录。</p>
     {% else %}
         <ul>
         {% for day in all_days %}

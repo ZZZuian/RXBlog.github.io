@@ -37,17 +37,17 @@ type="image/x-icon">
             <div class="navbar-collapse collapse">
                 {% if session.logged_in %}
                     <ul class="nav navbar-nav navbar-right">
-                        <li><a href="{{ url_for('main.view_all_days') }}">Days</a>
-                        <li><a href="{{ url_for('main.view_all_tags') }}">Tags</a></li>
-                        <li><a href="{{ url_for('admin.view_admin') }}">Admin</a></li>
-                        <li><a href="{{ url_for('auth.logout') }}">Log out</a></li>
+                        <li><a href="{{ url_for('main.view_all_days') }}">日期</a>
+                        <li><a href="{{ url_for('main.view_all_tags') }}">标签</a></li>
+                        <li><a href="{{ url_for('admin.view_admin') }}">管理</a></li>
+                        <li><a href="{{ url_for('auth.logout') }}">退出</a></li>
                     </ul>
                 {% else %}
                     <ul class="nav navbar-nav navbar-right">
                         {% if register %}
-                        <li><a href="{{ url_for('auth.register') }}">Register</a></li>
+                        <li><a href="{{ url_for('auth.register') }}">注册</a></li>
                         {% else %}
-                        <li><a href="{{ url_for('auth.login') }}">Log in</a></li>
+                        <li><a href="{{ url_for('auth.login') }}">登录</a></li>
                         {% endif %}
                     </ul>
                 {% endif %}

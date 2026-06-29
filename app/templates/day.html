@@ -3,7 +3,7 @@
 
     <div class="page-header">
         {% if entries_for_day|length == 0 %}
-            <h1>No Entries</h1>
+            <h1>暂无记录</h1>
         {% else %}
             <h1>{{ day[2:] }}</h1>
         {% endif %}
@@ -17,13 +17,13 @@
         <ul>
         {% for entry in entries_for_day %}
             <li><p><a href="{{ url_for('main.view_single_entry', timestamp=entry['timestamp'], _external=True) }}">{{ entry['timestamp'][11:] }}</a>: {{entry['entry']}}</br>
-            Tags:
+            标签:
                 {% if entry['tags']|length != 0 %}
                     {% for tag in entry['tags'] %}
                         <a href="{{ url_for('main.view_entries_for_tag', tag=tag, _external=True) }}">#{{ tag }}</a>
                     {% endfor %}
                 {% else %}
-                    none
+                    无
                 {% endif %}
                 </p></li>
         {% endfor %}

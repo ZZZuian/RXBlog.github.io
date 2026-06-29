@@ -2,7 +2,7 @@
 {% block page_content %}
 
     <div class="page-header">
-        <h1>Stream</h1>
+        <h1>动态</h1>
     </div>
 
     <div>
@@ -11,18 +11,18 @@
 
     <div>
     {% if not entries_for_page %}
-        <p>Nothing in your chronofile yet.</p>
+        <p>时间记录本中暂无内容。</p>
     {% else %}
         <ul>
         {% for entry in entries_for_page %}
             <li><p><a href="{{ url_for('main.view_entries_for_day', day=entry['timestamp'][:10], _external=True) }}">{{ entry['timestamp'][:10] }}</a> at <a href="{{ url_for('main.view_single_entry', timestamp=entry['timestamp'], _external=True) }}">{{ entry['timestamp'][11:] }}</a>:</br>{{entry['entry']}}</br>
-            Tags:
+            标签:
                 {% if entry['tags']|length != 0 %}
                     {% for tag in entry['tags'] %}
                         <a href="{{ url_for('main.view_entries_for_tag', tag=tag, _external=True) }}">#{{ tag }}</a>
                     {% endfor %}
                 {% else %}
-                    none
+                    无
                 {% endif %}
                 </p></li>
         {% endfor %}
@@ -32,7 +32,7 @@
     </br>
     <div>
         {% if next_page %}
-        <p><a class="btn btn-default" href="{{ url_for('main.view_entries_for_page', page=next_page, _external=True) }}">Older entries</a></p>
+        <p><a class="btn btn-default" href="{{ url_for('main.view_entries_for_page', page=next_page, _external=True) }}">更早的记录</a></p>
         {% endif %}
     </div>
 

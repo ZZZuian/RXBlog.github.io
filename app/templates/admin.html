@@ -2,27 +2,27 @@
 {% block page_content %}
 
     <div class="page-header">
-        <h1>Admin</h1>
+        <h1>管理</h1>
     </div>
 
     <div>
-        <p>Chronofile name:</p>
-        <p>{{ details['chronofile_name'] }} <a class="btn btn-default" href="{{ url_for('admin.rename_chronofile') }}">Edit</a></p>
+        <p>时间记录本名称：</p>
+        <p>{{ details['chronofile_name'] }} <a class="btn btn-default" href="{{ url_for('admin.rename_chronofile') }}">编辑</a></p>
     </div>
     </br>
     <div>
-        <p>Author name:</p>
-        <p>{{ details['author_name'] }} <a class="btn btn-default" href="{{ url_for('admin.rename_author') }}">Edit</a></p>
+        <p>作者名称：</p>
+        <p>{{ details['author_name'] }} <a class="btn btn-default" href="{{ url_for('admin.rename_author') }}">编辑</a></p>
     </div>
     </br>
     <div>
-        <p>Change email address:</p>
-        <p><a class="btn btn-default" href="{{ url_for('auth.change_email') }}">Click here</a></p>
+        <p>修改邮箱地址：</p>
+        <p><a class="btn btn-default" href="{{ url_for('auth.change_email') }}">点击此处</a></p>
     </div>
     </br>
     <div>
-        <p>Change password:</p>
-        <p><a class="btn btn-default" href="{{ url_for('auth.change_password') }}">Click here</a></p>
+        <p>修改密码：</p>
+        <p><a class="btn btn-default" href="{{ url_for('auth.change_password') }}">点击此处</a></p>
     </div>
 
 {% endblock %}

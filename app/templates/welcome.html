@@ -2,17 +2,17 @@
 {% block page_content %}
 
     <div class="page-header">
-        <h1>Hello</h1>
+        <h1>你好</h1>
     </div>
 
     <div>
         {% if register == True %}
-        <p>Chronoflask is a minimalist diary/journal application using Python 3, Flask, and TinyDB inspired by Warren Ellis's Chronofile Minimal and Buckminster Fuller's Dymaxion Chronofile.</p></br>
-        <p>Add new entries (with or witout hashtags) in a single input field. Each entry is stored with a UTC timestamp.</p></br>
-        <p>View recent entries, view all entries for a single day or date-range (chronologically), view a single entry, view all entries associated with a tag, and view a list of tags.</p></br>
-        </p>Private by default. Please <a href="{{ url_for('auth.register') }}">register</a> to begin using Chronoflask.</p>
+        <p>Chronoflask 是一个极简的日记/日志应用，基于 Python 3、Flask 和 TinyDB 构建，灵感来自 Warren Ellis 的 Chronofile Minimal 和 Buckminster Fuller 的 Dymaxion Chronofile。</p></br>
+        <p>在输入框中添加新记录（可带或不带标签），每条记录会自动记录 UTC 时间戳。</p></br>
+        <p>可以查看最近的记录、按日期查看、查看单条记录、按标签筛选记录，以及查看所有标签列表。</p></br>
+        <p>默认为私有模式，请先<a href="{{ url_for('auth.register') }}">注册</a>以开始使用 Chronoflask。</p>
         {% else %}
-        <h2>Please <a href="{{ url_for('auth.login') }}">log in</a>.</h2>
+        <h2>请先<a href="{{ url_for('auth.login') }}">登录</a>。</h2>
         {% endif %}
     </div>
 

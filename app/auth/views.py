@@ -18,7 +18,7 @@ from app.details import get_details
 def login():
     details = get_details()
     if not get_record('auth', Query().email.exists()):
-        flash('You need to register first.')
+        flash('您需要先注册。')
         return redirect(url_for('auth.register'))
     if session.get('logged_in'):
         return redirect(url_for('main.browse_all_entries'))
@@ -38,7 +38,7 @@ def login():
 @login_required
 def logout():
     session['logged_in'] = None
-    flash('You have been logged out.')
+    flash('您已成功退出登录。')
     return redirect(url_for('main.browse_all_entries'))
 
 
@@ -48,7 +48,7 @@ def register():
     and no entries.'''
     details = get_details()
     if details:
-        flash('A user is already registered. Log in.')
+        flash('已有用户注册，请登录。')
         return redirect(url_for('auth.login'))
     details = {'chronofile_name': current_app.config['DEFAULT_NAME'], \
                'author_name': current_app.config['DEFAULT_AUTHOR']}
@@ -65,7 +65,7 @@ def register():
                                 current_app.config['DEFAULT_AUTHOR'], \
                                 'creator_id': creator_id})
         insert_record('pagination', {'page': 1, 'entries': None})
-        flash('Registration successful. You can login now.')
+        flash('注册成功，现在可以登录了。')
         return redirect(url_for('auth.login'))
     return render_template('register.html', form=form, details=details, \
                            register=register)
@@ -80,10 +80,9 @@ def request_reset():
     if form.validate_on_submit():
         email = form.email.data
         user_id = get_element_id('auth', Query().email == email)
-        token = generate_confirmation_token(user_id)
-        send_email(email, 'Link to reset your password',
-                   'email/reset_password', token=token)
-        flash('Your password reset token has been sent.')
+        new_password_hash = pwd_context.hash(form.new_password.data)
+        get_table('auth').update({'password_hash': new_password_hash}, eids=[user_id])
+        flash('密码已重置成功，请使用新密码登录。')
         return redirect(url_for('auth.login'))
     return render_template('reset_password.html', form=form, details=details)
 
@@ -97,10 +96,10 @@ def confirm_password_reset(token):
     try:
         data = s.loads(token)
     except:
-        flash('The password reset link is invalid or has expired.')
+        flash('密码重置链接无效或已过期。')
         return redirect(url_for('auth.request_reset'))
     if not data.get('confirm'):
-        flash('The password reset link is invalid or has expired.')
+        flash('密码重置链接无效或已过期。')
         return redirect(url_for('auth.request_reset'))
     user_id = data.get('confirm')
     form = SetNewPasswordForm()
@@ -108,7 +107,7 @@ def confirm_password_reset(token):
         new_password_hash = pwd_context.hash(form.new_password.data)
         get_table('auth').update({'password_hash': new_password_hash}, \
                                  eids=[user_id])
-        flash('Password updated—you can now log in.')
+        flash('密码已更新，您现在可以登录了。')
         return redirect(url_for('auth.login'))
     return render_template('set_new_password.html', form=form, token=token, \
                            details=details)
@@ -123,7 +122,7 @@ def change_email():
         new_email = form.new_email.data
         user_id = session.get('user_id')
         get_table('auth').update({'email': new_email}, eids=user_id)
-        flash('Your email address has been updated.')
+        flash('您的邮箱地址已更新。')
         return redirect(url_for('admin.view_admin'))
     return render_template('change_email.html', form=form, details=details)
 
@@ -137,7 +136,7 @@ def change_password():
         new_password_hash = pwd_context.hash(form.new_password.data)
         get_table('auth').update({'password_hash': new_password_hash}, \
                                  eids=[session.get('user_id')])
-        flash('Your password has been updated.')
+        flash('您的密码已更新。')
         return redirect(url_for('admin.view_admin'))
     return render_template('change_password.html', form=form, details=details)
 

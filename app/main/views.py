@@ -111,7 +111,7 @@ def edit_entry(timestamp):
         update_record('entries', {'entry': form.new_entry.data, \
             'tags': tags}, (Query().creator_id == 1) & \
             (Query().timestamp == timestamp))
-        flash('Entry updated.')
+        flash('记录已更新。')
         update_pagination()
         return redirect(url_for('main.view_single_entry', timestamp=timestamp))
     form.new_entry.default = entry['entry']

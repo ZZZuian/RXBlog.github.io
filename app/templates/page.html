@@ -2,7 +2,7 @@
 {% block page_content %}
 
     <div class="page-header">
-        <h1>Page {{ page }}</h1>
+        <h1>第 {{ page }} 页</h1>
     </div>
 
     <div>
@@ -13,13 +13,13 @@
     <ul>
     {% for entry in entries_for_page %}
         <li><p><a href="{{ url_for('main.view_entries_for_day', day=entry['timestamp'][:10], _external=True) }}">{{ entry['timestamp'][:10] }}</a> at <a href="{{ url_for('main.view_single_entry', timestamp=entry['timestamp'], _external=True) }}">{{ entry['timestamp'][11:] }}</a>:</br>{{entry['entry']}}</br>
-        Tags:
+        标签:
             {% if entry['tags']|length != 0 %}
                 {% for tag in entry['tags'] %}
                     <a href="{{ url_for('main.view_entries_for_tag', tag=tag, _external=True) }}">#{{ tag }}</a>
                 {% endfor %}
             {% else %}
-                none
+                无
             {% endif %}
             </p></li>
     {% endfor %}
@@ -27,8 +27,8 @@
     </div>
     </br>
     <div>
-        <p class="right-link">{% if prev_page %}<a class="btn btn-default" href="{{ url_for('main.view_entries_for_page', page=prev_page, _external=True) }}">Newer entries</a>{% else %} {% endif %}</p>
-        <p>{% if next_page %}<a class="btn btn-default" href="{{ url_for('main.view_entries_for_page', page=next_page, _external=True) }}">Older entries</a>{% else %}<span class="btn btn-default" id="placeholder">_</span>{% endif %}</p>
+        <p class="right-link">{% if prev_page %}<a class="btn btn-default" href="{{ url_for('main.view_entries_for_page', page=prev_page, _external=True) }}">更新的记录</a>{% else %} {% endif %}</p>
+        <p>{% if next_page %}<a class="btn btn-default" href="{{ url_for('main.view_entries_for_page', page=next_page, _external=True) }}">更早的记录</a>{% else %}<span class="btn btn-default" id="placeholder">_</span>{% endif %}</p>
     </div>
 
 {% endblock %}

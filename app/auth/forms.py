@@ -11,33 +11,30 @@ from .views import pwd_context
 def account_exists(form, field):
     user = get_record('auth', Query().email == field.data)
     if not user:
-        raise ValidationError('Create an account first.')
+        raise ValidationError('请先注册账号。')
 
 
 def email_exists(form, field):
     user = get_record('auth', Query().email == field.data)
     if not user:
-        raise ValidationError('Please verify that you typed your email \
-            correctly.')
+        raise ValidationError('请确认您输入的邮箱地址正确。')
 
 
 def authorized(form, field):
     '''Verify user through password.'''
     user = get_table('auth').get(eid=session.get('user_id'))
     if not pwd_context.verify(field.data, user['password_hash']):
-        raise ValidationError('Invalid login credentials. Please try again.')
+        raise ValidationError('登录凭据无效，请重试。')
 
 
 def has_digits(form, field):
     if not bool(re.search(r'\d', field.data)):
-        raise ValidationError('Your password must contain at least one \
-            number.')
+        raise ValidationError('密码必须包含至少一个数字。')
 
 
 def has_special_char(form, field):
     if not bool(re.search(r'[^\w\*]', field.data)):
-        raise ValidationError('Your password must contain at least one \
-            special character.')
+        raise ValidationError('密码必须包含至少一个特殊字符。')
 
 
 class PasswordCorrect(object):
@@ -49,64 +46,70 @@ class PasswordCorrect(object):
         try:
             email = form[self.fieldname]
         except KeyError:
-            raise ValidationError(field.gettext("Invalid field name '%s'.") \
+            raise ValidationError(field.gettext("无效的字段名 '%s'。") \
                 % self.fieldname)
         user = get_record('auth', Query().email == email.data)
         if not pwd_context.verify(field.data, user['password_hash']):
-            raise ValidationError('Invalid password. Please try again.')
+            raise ValidationError('密码错误，请重试。')
 
 
 class LoginForm(Form):
-    email = StringField('Email:', validators=[DataRequired(), Email(), \
+    email = StringField('邮箱：', validators=[DataRequired(), Email(), \
         account_exists])
-    password = PasswordField('Password:', validators=[DataRequired(), \
+    password = PasswordField('密码：', validators=[DataRequired(), \
         PasswordCorrect('email')])
-    submit = SubmitField('Log in')
+    submit = SubmitField('登录')
 
 
 class RegistrationForm(Form):
-    email = StringField('Enter email address:', \
+    email = StringField('请输入邮箱地址：', \
         validators=[DataRequired(), Email()])
-    password = PasswordField('Enter password: ' +\
-        '(min 12 char., must incl. number and special character)', \
-        validators=[DataRequired(), Length(min=12), has_digits, has_special_char])
-    submit = SubmitField('Create account')
+    password = PasswordField('请输入密码：' +\
+        '（最少6位，须包含数字和特殊字符）', \
+        validators=[DataRequired(), Length(min=6), has_digits, has_special_char])
+    submit = SubmitField('创建账号')
 
 
 class ChangeEmailForm(Form):
-    password = PasswordField('Enter your password:', validators=[DataRequired(), \
+    password = PasswordField('请输入当前密码：', validators=[DataRequired(), \
         authorized])
-    new_email = StringField('New email address:', \
+    new_email = StringField('新邮箱地址：', \
         validators=[DataRequired(), Email(), EqualTo('verify_email', \
-        message='Emails must match')])
-    verify_email = StringField('Re-enter new email address:', \
+        message='两次输入的邮箱不一致')])
+    verify_email = StringField('再次输入新邮箱地址：', \
         validators=[DataRequired(), Email()])
-    submit = SubmitField('Change email')
+    submit = SubmitField('修改邮箱')
 
 
 class ChangePasswordForm(Form):
-    current_password = PasswordField('Your current password:', \
+    current_password = PasswordField('当前密码：', \
         validators=[DataRequired(), authorized])
-    new_password = PasswordField('New password: ' +\
-        '(min 12 char., must incl. number and special character)', \
-        validators=[DataRequired(), Length(min=12), EqualTo('verify_password', \
-        message='New passwords must match.'), has_digits, has_special_char])
-    verify_password = PasswordField('Re-enter new password:', \
-        validators=[DataRequired(), Length(min=12)])
-    submit = SubmitField('Change password')
+    new_password = PasswordField('新密码：' +\
+        '（最少6位，须包含数字和特殊字符）', \
+        validators=[DataRequired(), Length(min=6), EqualTo('verify_password', \
+        message='两次输入的新密码不一致。'), has_digits, has_special_char])
+    verify_password = PasswordField('再次输入新密码：', \
+        validators=[DataRequired(), Length(min=6)])
+    submit = SubmitField('修改密码')
 
 
 class ResetPasswordForm(Form):
-    email = StringField('Your registered email address:',
+    email = StringField('您注册时使用的邮箱地址：',
         validators=[DataRequired(), Email(), email_exists])
-    submit = SubmitField('Request password reset link')
+    new_password = PasswordField('新密码：' +\
+        '（最少6位，须包含数字和特殊字符）', \
+        validators=[DataRequired(), Length(min=6), EqualTo('verify_password', \
+        message='两次输入的新密码不一致。'), has_digits, has_special_char])
+    verify_password = PasswordField('再次输入新密码：', \
+        validators=[DataRequired(), Length(min=6)])
+    submit = SubmitField('重置密码')
 
 
 class SetNewPasswordForm(Form):
-    new_password = PasswordField('New password: ' +\
-        '(min 12 char., must incl. number and special character)', \
-        validators=[DataRequired(), Length(min=12), EqualTo('verify_password', \
-        message='New passwords must match.'), has_digits, has_special_char])
-    verify_password = PasswordField('Re-enter new password:', \
-        validators=[DataRequired(), Length(min=12)])
-    submit = SubmitField('Set new password')
+    new_password = PasswordField('新密码：' +\
+        '（最少6位，须包含数字和特殊字符）', \
+        validators=[DataRequired(), Length(min=6), EqualTo('verify_password', \
+        message='两次输入的新密码不一致。'), has_digits, has_special_char])
+    verify_password = PasswordField('再次输入新密码：', \
+        validators=[DataRequired(), Length(min=6)])
+    submit = SubmitField('设置新密码')

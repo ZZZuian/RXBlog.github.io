@@ -4,12 +4,12 @@ from wtforms.validators import DataRequired
 
 
 class RenameChronofileForm(Form):
-    new_name = StringField('Enter new name for chronofile:', \
+    new_name = StringField('输入时间记录本的新名称：', \
                            validators=[DataRequired()])
-    submit = SubmitField('Rename chronofile')
+    submit = SubmitField('重命名时间记录本')
 
 
 class RenameAuthorForm(Form):
-    new_name = StringField('Enter new author name:', \
+    new_name = StringField('输入新的作者名称：', \
                            validators=[DataRequired()])
-    submit = SubmitField('Rename author')
+    submit = SubmitField('重命名作者')

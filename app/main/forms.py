@@ -1,8 +1,8 @@
 import re
 from flask import Markup
 from flask_wtf import FlaskForm as Form
-from wtforms import StringField, SubmitField, ValidationError
-from wtforms.validators import DataRequired
+from wtforms import StringField, TextAreaField, SubmitField, ValidationError
+from wtforms.validators import DataRequired, Length
 
 
 class RawEntryForm(Form):
@@ -39,3 +39,9 @@ class EditEntryForm(Form):
     new_tags = StringField("编辑标签：（用逗号分隔，无需使用 #）", \
         validators=[no_hashtags, use_commas])
     submit = SubmitField('保存修改')
+
+
+class CommentForm(Form):
+    nickname = StringField('昵称', validators=[DataRequired(), Length(max=30)])
+    content = TextAreaField('评论内容', validators=[DataRequired(), Length(max=500)])
+    submit = SubmitField('发表评论')

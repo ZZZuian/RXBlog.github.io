@@ -9,7 +9,7 @@
         {{ wtf.quick_form(form) }}
     </div>
 
-    <div>
+    <div class="entry-detail">
         <p>内容：{{entry['entry']}}</br>
         标签:
             {% if entry['tags']|length != 0 %}
@@ -19,9 +19,69 @@
                 {% else %}
                     无
                 {% endif %}
-                </p></li>
-        </p>
+                </p>
+        <span class="like-btn" data-timestamp="{{ timestamp }}">
+            <span class="like-icon">♡</span>
+            <span class="like-count">{{ entry.get('likes', 0) }}</span>
+        </span>
         <a class="btn btn-default" href="{{ url_for('main.edit_entry', timestamp=timestamp, _external=True) }}">编辑记录</a>
     </div>
+
+    <div class="comment-section">
+        <h3>评论 ({{ comments|length }})</h3>
+
+        {% if comments %}
+        <div class="comment-list">
+            {% for c in comments %}
+            <div class="comment-item">
+                <div class="comment-header">
+                    <span class="comment-nickname">{{ c['nickname'] }}</span>
+                    <span class="comment-time">{{ c['created_at'] }}</span>
+                </div>
+                <div class="comment-body">{{ c['content'] }}</div>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        <div class="comment-form">
+            {{ wtf.quick_form(comment_form) }}
+        </div>
+    </div>
+
+    <script>
+    document.querySelectorAll('.like-btn').forEach(function(btn) {
+        var ts = btn.getAttribute('data-timestamp');
+        var icon = btn.querySelector('.like-icon');
+        var count = btn.querySelector('.like-count');
+        var likedKey = 'liked_' + ts;
+        if (localStorage.getItem(likedKey)) {
+            icon.textContent = '♥';
+            icon.classList.add('liked');
+        }
+        btn.addEventListener('click', function() {
+            var isLiked = localStorage.getItem(likedKey);
+            var action = isLiked ? 'unlike' : 'like';
+            fetch('/api/like/' + encodeURIComponent(ts), {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({action: action})
+            })
+            .then(function(r){ return r.json(); })
+            .then(function(data){
+                count.textContent = data.likes;
+                if (isLiked) {
+                    icon.textContent = '♡';
+                    icon.classList.remove('liked');
+                    localStorage.removeItem(likedKey);
+                } else {
+                    icon.textContent = '♥';
+                    icon.classList.add('liked');
+                    localStorage.setItem(likedKey, '1');
+                }
+            });
+        });
+    });
+    </script>
 
 {% endblock %}

@@ -1,16 +1,24 @@
 import os
 from flask import Flask, session, g, redirect, url_for, \
-                  render_template, flash, Blueprint, current_app, abort
+                  render_template, flash, Blueprint, current_app, abort, jsonify, request
 from flask_bootstrap import Bootstrap
 from datetime import datetime
-import ujson
+from datetime import datetime as dt
 from app.db import *
 from . import main
-from .forms import RawEntryForm, EditEntryForm
+from .forms import RawEntryForm, EditEntryForm, CommentForm
 from app.parse import *
 from app.pagination import *
 from app.decorators import login_required
 from app.details import get_details
+
+
+def get_comment_counts(timestamps):
+    counts = {}
+    for ts in timestamps:
+        comments = search_records('comments', Query().entry_timestamp == ts)
+        counts[ts] = len(comments)
+    return counts
 
 
 @main.route('/', methods=['GET', 'POST'])
@@ -36,8 +44,10 @@ def browse_all_entries():
     entries_for_page = get_entries_for_page(page)
     # Check if there's another page, returns None if not
     next_page = check_next_page(page)
+    timestamps = [e['timestamp'] for e in entries_for_page]
+    comment_counts = get_comment_counts(timestamps)
     return render_template('home.html', entries_for_page=entries_for_page, \
-        form=form, details=details, next_page=next_page)
+        form=form, details=details, next_page=next_page, comment_counts=comment_counts)
 
 
 @main.route('page/<page>', methods=['GET', 'POST'])
@@ -61,9 +71,11 @@ def view_entries_for_page(page):
     # Check if there's another page, returns None if not
     next_page = check_next_page(page)
     prev_page = page - 1
+    timestamps = [e['timestamp'] for e in entries_for_page]
+    comment_counts = get_comment_counts(timestamps)
     return render_template('page.html', form=form, \
         entries_for_page=entries_for_page, details=details, \
-        page=page, next_page=next_page, prev_page=prev_page)
+        page=page, next_page=next_page, prev_page=prev_page, comment_counts=comment_counts)
 
 
 @main.route('day/<day>', methods=['GET', 'POST'])
@@ -77,8 +89,10 @@ def view_entries_for_day(day):
     entries_for_day = search_records('entries', Query().timestamp.all([day]))
     if not entries_for_day:
         return abort(404)
+    timestamps = [e['timestamp'] for e in entries_for_day]
+    comment_counts = get_comment_counts(timestamps)
     return render_template('day.html', form=form, day=day, \
-                           entries_for_day=entries_for_day, details=details)
+                           entries_for_day=entries_for_day, details=details, comment_counts=comment_counts)
 
 
 @main.route('timestamp/<timestamp>', methods=['GET', 'POST'])
@@ -91,9 +105,21 @@ def view_single_entry(timestamp):
     form = RawEntryForm()
     if form.validate_on_submit():
         return parse_input(form.raw_entry.data, datetime.utcnow())
+    comment_form = CommentForm()
+    if comment_form.validate_on_submit():
+        insert_record('comments', {
+            'entry_timestamp': timestamp,
+            'nickname': comment_form.nickname.data,
+            'content': comment_form.content.data,
+            'created_at': dt.now().strftime('%Y-%m-%d %H:%M:%S')
+        })
+        flash('评论发表成功。')
+        return redirect(url_for('main.view_single_entry', timestamp=timestamp))
+    comments = search_records('comments', Query().entry_timestamp == timestamp)
     details = get_details()
     return render_template('entry.html', form=form, timestamp=timestamp, \
-                           entry=entry, details=details)
+                           entry=entry, details=details, \
+                           comment_form=comment_form, comments=comments)
 
 
 @main.route('timestamp/<timestamp>/edit', methods=['GET', 'POST'])
@@ -171,3 +197,18 @@ def view_entries_for_tag(tag):
         return abort(404)
     return render_template('tag.html', form=form, tag=tag, \
                            entries_for_tag=entries_for_tag, details=details)
+
+
+@main.route('/api/like/<timestamp>', methods=['POST'])
+def like_entry(timestamp):
+    entry = get_record('entries', Query().timestamp == timestamp)
+    if not entry:
+        return jsonify({'error': 'not found'}), 404
+    action = request.json.get('action', 'like') if request.is_json else 'like'
+    current_likes = entry.get('likes', 0)
+    if action == 'unlike':
+        current_likes = max(0, current_likes - 1)
+    else:
+        current_likes += 1
+    update_record('entries', {'likes': current_likes}, Query().timestamp == timestamp)
+    return jsonify({'likes': current_likes})

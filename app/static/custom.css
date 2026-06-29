@@ -280,6 +280,134 @@ a:hover {
   transform: scale(1.15) rotate(20deg) !important;
 }
 
+/* ===== Like Button ===== */
+.like-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  padding: 4px 10px;
+  border-radius: 20px;
+  transition: all 0.3s ease;
+  margin-left: 10px;
+  font-size: 1.2rem;
+  vertical-align: middle;
+}
+
+.like-btn:hover {
+  background: rgba(91, 106, 191, 0.12);
+}
+
+.like-icon {
+  font-size: 1.4rem;
+  color: var(--text-muted);
+  transition: all 0.3s ease;
+}
+
+.like-icon.liked {
+  color: #e74c3c;
+  transform: scale(1.2);
+}
+
+.like-count {
+  font-size: 1.1rem;
+  color: var(--text-muted);
+  font-family: 'Open Sans', sans-serif;
+}
+
+.entry-item {
+  margin-bottom: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.entry-detail {
+  background: var(--bg-card);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 14px;
+  padding: 28px 32px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.06);
+}
+
+/* ===== Comment Section ===== */
+.comment-section {
+  margin-top: 30px;
+  background: var(--bg-card);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 14px;
+  padding: 28px 32px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.06);
+}
+
+.comment-section h3 {
+  font-size: 1.5rem;
+  color: var(--text-primary);
+  font-family: 'Open Sans', 'Noto Sans SC', sans-serif;
+  margin-bottom: 20px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.comment-list {
+  margin-bottom: 24px;
+}
+
+.comment-item {
+  padding: 14px 0;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.comment-item:last-child {
+  border-bottom: none;
+}
+
+.comment-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.comment-nickname {
+  font-weight: 600;
+  font-size: 1.2rem;
+  color: var(--accent);
+  font-family: 'Open Sans', 'Noto Sans SC', sans-serif;
+}
+
+.comment-time {
+  font-size: 1rem;
+  color: var(--text-muted);
+  font-family: 'Open Sans', sans-serif;
+}
+
+.comment-body {
+  font-size: 1.3rem;
+  color: var(--text-secondary);
+  line-height: 1.7;
+  padding-left: 4px;
+}
+
+.comment-form {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.comment-link {
+  font-size: 1.1rem;
+  color: var(--text-muted) !important;
+  margin-left: 8px;
+  text-decoration: none !important;
+  transition: color 0.3s;
+}
+
+.comment-link:hover {
+  color: var(--accent) !important;
+}
+
 /* ===== Responsive ===== */
 @media (min-width: 992px) {
   .container-content {

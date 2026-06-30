@@ -205,7 +205,7 @@ def store_single_file(uploader_id, prepared, subfolder='avatar'):
     absolute_path = root / filename
     absolute_path.write_bytes(prepared.data)
 
-    relative_path = '{}/{}'.format(subfolder, filename)
+    relative_path = 'uploads/{}/{}'.format(subfolder, filename)
 
     media = Media(
         uploader_id=uploader_id,
@@ -218,3 +218,17 @@ def store_single_file(uploader_id, prepared, subfolder='avatar'):
     db.session.flush()
 
     return relative_path
+
+
+def single_file_absolute_path(relative_path):
+    """Resolve an uploaded profile/music path without escaping static/uploads."""
+    if not relative_path:
+        return None
+    normalized = str(relative_path).replace('\\', '/').lstrip('/')
+    if normalized.startswith('uploads/'):
+        normalized = normalized[len('uploads/'):]
+    upload_base = _upload_root().parent.resolve()
+    candidate = (upload_base / normalized).resolve()
+    if upload_base != candidate and upload_base not in candidate.parents:
+        raise UploadValidationError('上传文件路径无效。')
+    return candidate

@@ -19,7 +19,7 @@ app.config.update(
     MAX_CONTENT_LENGTH=50 * 1024 * 1024,
     MAX_IMAGE_SIZE=5 * 1024 * 1024,
     MAX_POST_IMAGES=9,
-    DEFAULT_NAME='Chronoflask',
+    DEFAULT_NAME='RXBlog',
     DEFAULT_AUTHOR='Chronologist'
 )
 
@@ -28,10 +28,14 @@ csrf.init_app(app)
 bootstrap = Bootstrap(app)
 
 with app.app_context():
-    from .migration import migrate_single_community, migrate_tinydb
+    from .migration import (migrate_single_community,
+                            migrate_deactivated_identities,
+                            migrate_single_file_static_paths, migrate_tinydb)
     db.create_all()
     migrate_tinydb()
     migrate_single_community()
+    migrate_single_file_static_paths()
+    migrate_deactivated_identities()
 
 from app.admin import admin
 from app.auth import auth

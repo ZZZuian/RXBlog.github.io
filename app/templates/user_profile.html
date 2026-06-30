@@ -1,21 +1,20 @@
 {% extends "base.html" %}
+{% block content_panel_class %}profile-page-panel{% endblock %}
 {% block page_content %}
 
 <div class="user-profile">
-    {% if profile.background_image %}
-    <div class="profile-bg" style="background-image: url('{{ url_for('static', filename=profile.background_image) }}')">
+    <section class="profile-hero profile-text-dark{% if profile.background_image %} has-custom-background{% endif %}"{% if profile.background_image %} style="background-image: url('{{ url_for('static', filename=profile.background_image) }}')" data-background-url="{{ url_for('static', filename=profile.background_image) }}"{% endif %}>
+        {% if profile.background_image %}
         <div class="profile-bg-overlay"></div>
-    </div>
-    {% endif %}
+        {% endif %}
 
-    <div class="profile-content">
         <div class="profile-card">
             <div class="profile-header">
                 <div class="profile-avatar-wrapper">
                     {% if profile.avatar %}
                     <img src="{{ url_for('static', filename=profile.avatar) }}" alt="{{ profile.nickname }}" class="profile-avatar">
                     {% else %}
-                    <div class="profile-avatar profile-avatar-default">{{ profile.nickname[0] }}</div>
+                    <img src="{{ url_for('static', filename='images/default-avatar.jpg') }}" alt="默认头像" class="profile-avatar">
                     {% endif %}
                 </div>
                 <div class="profile-info">
@@ -45,12 +44,52 @@
 
             {% if is_owner %}
             <div class="profile-actions">
-                <a href="{{ url_for('user.settings_profile') }}" class="btn btn-default">编辑资料</a>
+                <a href="{{ url_for('user.settings_profile') }}" class="btn btn-primary">编辑资料</a>
                 <a href="{{ url_for('user.settings_music') }}" class="btn btn-default">管理音乐</a>
             </div>
             {% endif %}
         </div>
+    </section>
 
+    {% if profile.background_image %}
+    <script>
+    (function() {
+        var hero = document.querySelector('.profile-hero[data-background-url]');
+        if (!hero) return;
+        var image = new Image();
+        image.onload = function() {
+            var canvas = document.createElement('canvas');
+            canvas.width = 48;
+            canvas.height = 24;
+            var context = canvas.getContext('2d', {willReadFrequently: true});
+            var sampleWidth = image.naturalWidth * .56;
+            var sampleHeight = image.naturalHeight * .42;
+            var sourceX = (image.naturalWidth - sampleWidth) / 2;
+            var sourceY = image.naturalHeight * .34;
+            context.drawImage(image, sourceX, sourceY, sampleWidth, sampleHeight,
+                              0, 0, canvas.width, canvas.height);
+            var pixels = context.getImageData(0, 0, canvas.width,
+                                              canvas.height).data;
+            var luminance = 0;
+            var count = 0;
+            for (var index = 0; index < pixels.length; index += 4) {
+                if (pixels[index + 3] < 32) continue;
+                luminance += pixels[index] * .2126 +
+                             pixels[index + 1] * .7152 +
+                             pixels[index + 2] * .0722;
+                count += 1;
+            }
+            var useLightText = count && luminance / count < 148;
+            hero.classList.toggle('profile-text-light', useLightText);
+            hero.classList.toggle('profile-text-dark', !useLightText);
+        };
+        image.onerror = function() { hero.classList.add('profile-text-dark'); };
+        image.src = hero.dataset.backgroundUrl;
+    })();
+    </script>
+    {% endif %}
+
+    <div class="profile-content">
         {% if music_tracks %}
         <div class="music-card" id="musicCard">
             <div class="music-card-header">
@@ -209,7 +248,7 @@
                     <div class="form-group">
                         <textarea name="content" class="form-control" rows="3" placeholder="写下你的留言..." maxlength="500" required></textarea>
                     </div>
-                    <button type="submit" class="btn btn-default">发表留言</button>
+                    <button type="submit" class="btn btn-primary">发表留言</button>
                 </form>
             </div>
             {% else %}
@@ -222,14 +261,14 @@
                 <div class="guestbook-item" id="msg-{{ message.id }}">
                     <div class="guestbook-header">
                         <div class="guestbook-avatar-container">
-                            {% if message.author and message.author.profile and message.author.profile.avatar %}
+                            {% if message.author and message.author.status == 'active' and message.author.profile and message.author.profile.avatar %}
                             <img src="{{ url_for('static', filename=message.author.profile.avatar) }}" alt="{{ message.nickname }}" class="guestbook-avatar">
                             {% else %}
-                            <div class="guestbook-avatar guestbook-avatar-default">{{ message.nickname[0] }}</div>
+                            <img src="{{ url_for('static', filename='images/default-avatar.jpg') }}" alt="默认头像" class="guestbook-avatar">
                             {% endif %}
                         </div>
                         <div class="guestbook-meta">
-                            <span class="guestbook-nickname">{{ message.nickname }}</span>
+                            <span class="guestbook-nickname{% if message.author.status != 'active' %} deactivated-user{% endif %}">{{ message.nickname }}</span>
                             <span class="guestbook-time">{{ message.created_at.strftime('%Y-%m-%d %H:%M') }}</span>
                         </div>
                         {% if session.user_id == message.author_id or is_owner or is_admin %}

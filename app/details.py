@@ -8,7 +8,7 @@ def get_details(user_id=None):
     site_name = db.session.get(SiteSetting, 'site_name')
     details = {
         'chronofile_name': site_name.value if site_name else
-                           current_app.config.get('DEFAULT_NAME', 'Chronoflask'),
+                           current_app.config.get('DEFAULT_NAME', 'RXBlog'),
         'author_name': current_app.config.get('DEFAULT_AUTHOR', 'Chronologist')
     }
     user_id = user_id if user_id is not None else session.get('user_id')

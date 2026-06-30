@@ -7,10 +7,9 @@
 
     <div>
         {% if register == True %}
-        <p>Chronoflask 是一个极简的日记/日志应用，基于 Python 3、Flask 和 TinyDB 构建，灵感来自 Warren Ellis 的 Chronofile Minimal 和 Buckminster Fuller 的 Dymaxion Chronofile。</p></br>
-        <p>在输入框中添加新记录（可带或不带标签），每条记录会自动记录 UTC 时间戳。</p></br>
-        <p>可以查看最近的记录、按日期查看、查看单条记录、按标签筛选记录，以及查看所有标签列表。</p></br>
-        <p>默认为私有模式，请先<a href="{{ url_for('auth.register') }}">注册</a>以开始使用 Chronoflask。</p>
+        <p>RXBlog 是一个基于 Python 3 与 Flask 构建的多用户社区博客平台。</p></br>
+        <p>注册后可以发布博文、上传图片、参与评论和点赞，并打造自己的个性主页。</p></br>
+        <p>请先<a href="{{ url_for('auth.register') }}">注册</a>以开始使用 RXBlog。</p>
         {% else %}
         <h2>欢迎回来，请先<a href="{{ url_for('auth.login') }}">登录</a>。</h2>
         <p>第一次来到这里？也可以<a href="{{ url_for('auth.register') }}">创建新账号</a>。</p>

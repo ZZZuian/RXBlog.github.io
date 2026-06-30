@@ -2,7 +2,8 @@ import re
 
 from flask import session
 from flask_wtf import FlaskForm as Form
-from wtforms import PasswordField, StringField, SubmitField, ValidationError
+from wtforms import (BooleanField, PasswordField, StringField, SubmitField,
+                     ValidationError)
 from wtforms.validators import DataRequired, EqualTo, Length
 
 from app.extensions import db
@@ -30,7 +31,9 @@ def valid_account(form, field):
 
 
 def nickname_available(form, field):
-    if Profile.query.filter_by(nickname=field.data.strip()).first():
+    if (Profile.query.join(User)
+            .filter(Profile.nickname == field.data.strip(),
+                    User.status == 'active').first()):
         raise ValidationError('该昵称已被使用。')
 
 
@@ -46,7 +49,7 @@ def has_digits(form, field):
 
 
 def has_special_char(form, field):
-    if not re.search(r'[^\w\*]', field.data):
+    if not re.search(r'[^\w\s]', field.data):
         raise ValidationError('密码必须包含至少一个特殊字符。')
 
 
@@ -67,21 +70,23 @@ class PasswordCorrect:
 class LoginForm(Form):
     account = StringField('账号：', filters=[normalize_account],
                           validators=[DataRequired(), Length(min=3, max=254),
-                                      account_exists])
+                                      account_exists],
+                          render_kw={'placeholder': '请输入账号，如 000001'})
     password = PasswordField('密码：', validators=[DataRequired(),
-                                                   PasswordCorrect('account')])
+                                                   PasswordCorrect('account')],
+                             render_kw={'placeholder':
+                                        '不少于6位，包含数字和特殊字符'})
     submit = SubmitField('登录')
 
 
 class RegistrationForm(Form):
     nickname = StringField('昵称：', filters=[lambda value: value.strip()
                            if value else value], validators=[DataRequired(),
-                           Length(min=2, max=30), nickname_available])
-    account = StringField('账号：', filters=[normalize_account],
-                          validators=[DataRequired(), Length(min=3, max=30),
-                                      valid_account, account_available])
-    password = PasswordField('请输入密码：（最少6位，须包含数字和特殊字符）',
-        validators=[DataRequired(), Length(min=6), has_digits, has_special_char])
+                           Length(min=2, max=30), nickname_available],
+                           render_kw={'placeholder': '请输入公开显示的昵称'})
+    password = PasswordField('密码：', validators=[DataRequired(), Length(min=6),
+        has_digits, has_special_char], render_kw={'placeholder':
+        '不少于6位，包含数字和特殊字符'})
     submit = SubmitField('创建账号')
 
 
@@ -106,6 +111,14 @@ class ChangePasswordForm(Form):
     verify_password = PasswordField('再次输入新密码：',
         validators=[DataRequired(), Length(min=6)])
     submit = SubmitField('修改密码')
+
+
+class DeactivateAccountForm(Form):
+    password = PasswordField('当前密码：', validators=[DataRequired(), authorized],
+        render_kw={'placeholder': '请输入当前密码确认注销'})
+    confirm = BooleanField('我已了解：注销后无法登录，帖子和评论仍会保留。',
+                           validators=[DataRequired()])
+    submit = SubmitField('确认注销账号')
 
 
 class ResetPasswordForm(Form):

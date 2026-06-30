@@ -18,6 +18,18 @@ from .forms import (CommentForm, DeleteEntryForm, PostForm, RawEntryForm)
 PER_PAGE = 10
 
 
+@main.app_context_processor
+def inject_liked_post_ids():
+    """Expose the signed-in user's likes to every post-card template."""
+    user_id = session.get('user_id')
+    if not user_id:
+        return {'liked_post_ids': set()}
+    post_ids = db.session.scalars(
+        select(PostLike.post_id).where(PostLike.user_id == user_id)
+    ).all()
+    return {'liked_post_ids': set(post_ids)}
+
+
 def _parse_tags(raw_tags):
     tags = []
     for value in (raw_tags or '').replace('，', ',').split(','):

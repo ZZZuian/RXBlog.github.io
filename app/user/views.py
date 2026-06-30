@@ -2,12 +2,17 @@ from flask import abort, flash, jsonify, redirect, render_template, request, ses
 from sqlalchemy import func, select
 
 from app.decorators import login_required
+from app.auth.forms import DeactivateAccountForm
+from app.accounts import release_account
 from app.details import get_details
 from app.extensions import db
 from app.models import (Comment, GuestbookMessage, Post, PostLike,
                         User, UserMusicTrack)
+import os
+from pathlib import Path
+
 from app.uploads import (UploadValidationError, cleanup_paths,
-                         media_absolute_path, prepare_single_file)
+                         prepare_single_file, single_file_absolute_path)
 from . import user
 
 
@@ -112,8 +117,7 @@ def settings_profile():
                     avatar_path = store_single_file(
                         current_user.id, prepared, 'avatar')
                     if profile.avatar:
-                        old_path = media_absolute_path(profile.avatar)
-                        import os
+                        old_path = single_file_absolute_path(profile.avatar)
                         if os.path.exists(old_path):
                             os.remove(old_path)
                     profile.avatar = avatar_path
@@ -126,9 +130,8 @@ def settings_profile():
                     bg_path = store_single_file(
                         current_user.id, prepared, 'background')
                     if profile.background_image:
-                        old_path = media_absolute_path(
+                        old_path = single_file_absolute_path(
                             profile.background_image)
-                        import os
                         if os.path.exists(old_path):
                             os.remove(old_path)
                     profile.background_image = bg_path
@@ -146,7 +149,31 @@ def settings_profile():
 
     return render_template('settings_profile.html',
                            profile=profile,
+                           deactivate_form=DeactivateAccountForm(),
                            details=get_details())
+
+
+@user.route('/settings/deactivate', methods=['POST'])
+@login_required
+def deactivate_account():
+    form = DeactivateAccountForm()
+    if not form.validate_on_submit():
+        for errors in form.errors.values():
+            for error in errors:
+                flash(error)
+        return redirect(url_for('user.settings_profile'))
+
+    current_user = db.session.get(User, session['user_id'])
+    released_account = current_user.username
+    release_account(released_account)
+    current_user.status = 'deactivated'
+    current_user.username = '__deactivated_account_{}__'.format(current_user.id)
+    current_user.profile.nickname = '__deactivated_user_{}__'.format(
+        current_user.id)
+    db.session.commit()
+    session.clear()
+    flash('账号已注销。历史帖子和评论将继续保留。')
+    return redirect(url_for('main.browse_all_entries'))
 
 
 @user.route('/settings/music', methods=['GET', 'POST'])
@@ -211,9 +238,9 @@ def settings_music():
             if track_id:
                 track = db.session.get(UserMusicTrack, track_id)
                 if track and track.user_id == current_user.id:
-                    audio_path = media_absolute_path(track.audio_path)
-                    cover_path = media_absolute_path(track.cover_path) if track.cover_path else None
-                    import os
+                    audio_path = single_file_absolute_path(track.audio_path)
+                    cover_path = single_file_absolute_path(
+                        track.cover_path) if track.cover_path else None
                     if os.path.exists(audio_path):
                         os.remove(audio_path)
                     if cover_path and os.path.exists(cover_path):

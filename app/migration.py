@@ -5,12 +5,15 @@ from datetime import datetime
 from pathlib import Path
 
 from .extensions import db
-from .models import (Comment, MigrationState, Post, Profile, SiteSetting, User,
-                     utcnow)
+from .accounts import release_account
+from .models import (Comment, Media, MigrationState, Post, Profile, SiteSetting,
+                     User, UserMusicTrack, utcnow)
 
 
 MIGRATION_NAME = 'tinydb_to_sqlite_v1'
 SINGLE_COMMUNITY_MIGRATION = 'collapse_boards_to_single_community_v1'
+SINGLE_FILE_PATH_MIGRATION = 'single_file_static_paths_v1'
+DEACTIVATED_IDENTITY_MIGRATION = 'release_deactivated_identities_v1'
 
 
 def _table(data, name):
@@ -134,7 +137,7 @@ def migrate_tinydb(legacy_path=None):
     if not db.session.get(SiteSetting, 'site_name'):
         db.session.add(SiteSetting(
             key='site_name',
-            value=first_admin.get('chronofile_name', 'Chronoflask'),
+            value=first_admin.get('chronofile_name', 'RXBlog'),
             updated_by=first_user_id
         ))
 
@@ -150,5 +153,52 @@ def migrate_single_community():
     Post.query.filter(Post.board != 'public').update(
         {Post.board: 'public'}, synchronize_session=False)
     db.session.add(MigrationState(name=SINGLE_COMMUNITY_MIGRATION))
+    db.session.commit()
+    return True
+
+
+def migrate_single_file_static_paths():
+    """Add the missing static/uploads prefix to legacy profile media paths."""
+    if db.session.get(MigrationState, SINGLE_FILE_PATH_MIGRATION):
+        return False
+
+    folders = ('avatar/', 'background/', 'music/', 'music_cover/')
+
+    def normalize(value):
+        value = (value or '').replace('\\', '/').lstrip('/')
+        if value.startswith('uploads/'):
+            return value
+        if value.startswith(folders):
+            return 'uploads/' + value
+        return value
+
+    for profile in Profile.query.all():
+        profile.avatar = normalize(profile.avatar)
+        profile.background_image = normalize(profile.background_image)
+        profile.background_music = normalize(profile.background_music)
+    for track in UserMusicTrack.query.all():
+        track.audio_path = normalize(track.audio_path)
+        track.cover_path = normalize(track.cover_path)
+    for media in Media.query.all():
+        media.file_path = normalize(media.file_path)
+
+    db.session.add(MigrationState(name=SINGLE_FILE_PATH_MIGRATION))
+    db.session.commit()
+    return True
+
+
+def migrate_deactivated_identities():
+    """Release account names and nicknames retained by older soft deletes."""
+    if db.session.get(MigrationState, DEACTIVATED_IDENTITY_MIGRATION):
+        return False
+    users = User.query.filter(User.status != 'active').all()
+    for user in users:
+        if not user.username.startswith('__deactivated_account_'):
+            release_account(user.username)
+            user.username = '__deactivated_account_{}__'.format(user.id)
+        if user.profile and not user.profile.nickname.startswith(
+                '__deactivated_user_'):
+            user.profile.nickname = '__deactivated_user_{}__'.format(user.id)
+    db.session.add(MigrationState(name=DEACTIVATED_IDENTITY_MIGRATION))
     db.session.commit()
     return True

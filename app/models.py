@@ -2,6 +2,8 @@ from datetime import datetime, timezone
 
 from .extensions import db
 
+DEFAULT_AVATAR_PATH = 'images/default-avatar.jpg'
+
 
 def utcnow():
     return datetime.now(timezone.utc).replace(tzinfo=None)
@@ -23,13 +25,22 @@ class User(db.Model):
     posts = db.relationship('Post', back_populates='author',
                             cascade='all, delete-orphan')
 
+    @property
+    def display_name(self):
+        if self.status != 'active':
+            return '该用户已注销'
+        if self.profile:
+            return self.profile.nickname
+        return self.username
+
 
 class Profile(db.Model):
     __tablename__ = 'profiles'
 
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), primary_key=True)
     nickname = db.Column(db.String(30), nullable=False, index=True)
-    avatar = db.Column(db.String(255), nullable=False, default='')
+    avatar = db.Column(db.String(255), nullable=False,
+                       default=DEFAULT_AVATAR_PATH)
     bio = db.Column(db.String(500), nullable=False, default='')
     background_image = db.Column(db.String(255), nullable=False, default='')
     background_music = db.Column(db.String(255), nullable=False, default='')
@@ -146,8 +157,8 @@ class Comment(db.Model):
 
     @property
     def nickname(self):
-        if self.author and self.author.profile:
-            return self.author.profile.nickname
+        if self.author:
+            return self.author.display_name
         return self.legacy_nickname or '历史访客'
 
 
@@ -186,8 +197,8 @@ class GuestbookMessage(db.Model):
 
     @property
     def nickname(self):
-        if self.author and self.author.profile:
-            return self.author.profile.nickname
+        if self.author:
+            return self.author.display_name
         return '匿名访客'
 
 

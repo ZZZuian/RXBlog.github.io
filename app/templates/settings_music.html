@@ -3,13 +3,16 @@
 
 <div class="settings-layout">
     <nav class="settings-nav">
-        <a href="{{ url_for('user.settings_profile') }}">个人资料</a>
-        <a href="{{ url_for('user.settings_music') }}" class="active">音乐管理</a>
+        <a href="{{ url_for('user.settings_profile') }}">头像与主页</a>
+        <a href="{{ url_for('user.settings_music') }}" class="active">主页背景音乐</a>
+        <a href="{{ url_for('auth.change_account') }}">登录账号</a>
+        <a href="{{ url_for('auth.change_password') }}">登录密码</a>
         <a href="{{ url_for('user.view_user_profile', user_id=session.user_id) }}">查看主页</a>
     </nav>
 
     <div class="settings-panel">
-        <h2>管理音乐</h2>
+        <h2>主页背景音乐</h2>
+        <p class="settings-description">添加的音乐会显示在你的公开个人主页中，可随时启用、禁用或删除。</p>
 
         <form method="post" enctype="multipart/form-data" class="settings-form">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -37,7 +40,7 @@
                 <p class="help-text">建议正方形图片</p>
             </div>
 
-            <button type="submit" class="btn btn-default">添加音乐</button>
+            <button type="submit" class="btn btn-primary">添加音乐</button>
         </form>
 
         {% if tracks %}

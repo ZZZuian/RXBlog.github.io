@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import shutil
 import tempfile
 import unittest
@@ -21,7 +22,7 @@ from app import app
 from app.extensions import db
 from app.migration import migrate_tinydb
 from app.models import (Comment, Media, MigrationState, Post, PostImage,
-                        PostLike, Profile, User)
+                        PostLike, Profile, SiteSetting, User)
 
 
 class CommunityPlatformTest(unittest.TestCase):
@@ -44,13 +45,15 @@ class CommunityPlatformTest(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.upload_dir, ignore_errors=True)
 
-    def register(self, nickname, account):
-        return self.client.post('/admin/register', data={
+    def register(self, nickname):
+        response = self.client.post('/admin/register', data={
             'nickname': nickname,
-            'account': account,
             'password': 'Secret1!',
             'submit': '创建账号'
         }, follow_redirects=True)
+        with app.app_context():
+            account = Profile.query.filter_by(nickname=nickname).one().user.username
+        return account, response
 
     def login(self, account):
         return self.client.post('/admin/login', data={
@@ -77,14 +80,32 @@ class CommunityPlatformTest(unittest.TestCase):
         return stream, filename
 
     def test_public_feed_interaction_and_author_permissions(self):
-        self.register('Alice', 'alice')
-        self.register('Bob', 'bob_2026')
+        register_page = self.client.get('/admin/register').get_data(as_text=True)
+        self.assertNotIn('name="account"', register_page)
+        self.assertIn('不少于6位，包含数字和特殊字符', register_page)
 
-        self.login('alice')
+        alice_account, alice_registration = self.register('Alice')
+        bob_account, _ = self.register('Bob')
+        self.assertEqual(alice_account, '000001')
+        self.assertEqual(bob_account, '000002')
+        self.assertIn('您的账号是 000001',
+                      alice_registration.get_data(as_text=True))
+        login_page = self.client.get('/admin/login').get_data(as_text=True)
+        self.assertIn('请输入账号，如 000001', login_page)
+        self.assertIn('不少于6位，包含数字和特殊字符', login_page)
+
+        with app.app_context():
+            sequence = db.session.get(SiteSetting, 'account_sequence')
+            sequence.value = '999999'
+            db.session.commit()
+        large_account, _ = self.register('Charlie')
+        self.assertEqual(large_account, '1000000')
+
+        self.login(alice_account)
         self.publish('Alice title', 'Alice public post', tags='one')
         with app.app_context():
-            alice = User.query.filter_by(username='alice').one()
-            bob = User.query.filter_by(username='bob_2026').one()
+            alice = User.query.filter_by(username=alice_account).one()
+            bob = User.query.filter_by(username=bob_account).one()
             alice_post = Post.query.filter_by(author_id=alice.id).one()
             alice_post_id = alice_post.id
             alice_timestamp = alice_post.timestamp
@@ -94,7 +115,7 @@ class CommunityPlatformTest(unittest.TestCase):
             self.assertEqual(bob.role, 'user')
         self.logout()
 
-        self.login('bob_2026')
+        self.login(bob_account)
         self.publish('Bob title', 'Bob public post', tags='two')
 
         # Community visibility: Bob sees Alice, and guests see both authors.
@@ -146,7 +167,7 @@ class CommunityPlatformTest(unittest.TestCase):
                                                 (bob.id, alice_post_id)))
             self.assertNotIn('pagination', inspect(db.engine).get_table_names())
 
-        self.login('alice')
+        self.login(alice_account)
         edit_response = self.client.post(
             '/post/{}/edit'.format(alice_post_id),
             data={'title': 'Alice edited title',
@@ -193,8 +214,8 @@ class CommunityPlatformTest(unittest.TestCase):
             self.assertEqual(post.board, 'public')
 
     def test_structured_post_images_edit_cleanup_and_validation(self):
-        self.register('Alice', 'alice')
-        self.login('alice')
+        alice_account, _ = self.register('Alice')
+        self.login(alice_account)
 
         response = self.client.post('/post/new', data={
             'title': 'Image post',
@@ -295,6 +316,97 @@ class CommunityPlatformTest(unittest.TestCase):
         with app.app_context():
             self.assertIsNone(Post.query.filter_by(
                 title='Oversized image').first())
+
+    def test_like_ajax_includes_valid_csrf_token(self):
+        alice_account, _ = self.register('Alice')
+        self.login(alice_account)
+        self.publish('Like target', 'CSRF-protected like request')
+        with app.app_context():
+            post_id = Post.query.filter_by(title='Like target').one().id
+
+        app.config['WTF_CSRF_ENABLED'] = True
+        try:
+            page = self.client.get('/')
+            page_html = page.get_data(as_text=True)
+            self.assertIn('js-post-like', page_html)
+            self.assertIn('/api/like/{}'.format(post_id), page_html)
+            match = re.search(
+                r'name="csrf-token" content="([^"]+)"', page_html)
+            self.assertIsNotNone(match)
+            response = self.client.post(
+                '/api/like/{}'.format(post_id),
+                json={'action': 'like'},
+                headers={'X-CSRFToken': match.group(1)})
+            self.assertEqual(response.status_code, 200)
+            self.assertTrue(response.get_json()['liked'])
+        finally:
+            app.config['WTF_CSRF_ENABLED'] = False
+
+    def test_deactivate_preserves_content_and_sidebar_uses_avatar(self):
+        account, _ = self.register('Alice')
+        self.login(account)
+        with app.app_context():
+            alice = User.query.filter_by(username=account).one()
+            self.assertEqual(alice.profile.avatar,
+                             'images/default-avatar.jpg')
+            user_id = alice.id
+
+        avatar_response = self.client.post('/settings/profile', data={
+            'nickname': 'Alice',
+            'bio': 'profile',
+            'avatar': self.image_file('avatar.png', color='pink')
+        }, content_type='multipart/form-data', follow_redirects=True)
+        self.assertEqual(avatar_response.status_code, 200)
+        with app.app_context():
+            alice = db.session.get(User, user_id)
+            avatar_path = alice.profile.avatar
+            self.assertTrue(avatar_path.startswith('uploads/avatar/'))
+        sidebar = self.client.get('/').get_data(as_text=True)
+        self.assertIn('sidebar-profile-avatar', sidebar)
+        self.assertIn(avatar_path, sidebar)
+
+        self.publish('Preserved post', 'Content survives deactivation')
+        with app.app_context():
+            post_id = Post.query.filter_by(title='Preserved post').one().id
+        self.client.post('/post/{}'.format(post_id), data={
+            'content': 'Preserved comment', 'submit': '发表评论'
+        }, follow_redirects=True)
+
+        response = self.client.post('/settings/deactivate', data={
+            'password': 'Secret1!', 'confirm': 'y',
+            'submit': '确认注销账号'
+        }, follow_redirects=True)
+        self.assertIn('账号已注销', response.get_data(as_text=True))
+        with app.app_context():
+            alice = db.session.get(User, user_id)
+            self.assertEqual(alice.status, 'deactivated')
+            self.assertTrue(alice.username.startswith(
+                '__deactivated_account_'))
+            self.assertTrue(alice.profile.nickname.startswith(
+                '__deactivated_user_'))
+            self.assertIsNone(User.query.filter_by(username=account).first())
+            self.assertIsNotNone(db.session.get(Post, post_id))
+            self.assertIsNotNone(Comment.query.filter_by(
+                content='Preserved comment').first())
+
+        post_page = self.client.get(
+            '/post/{}'.format(post_id)).get_data(as_text=True)
+        self.assertIn('该用户已注销', post_page)
+        self.assertEqual(self.client.get(
+            '/user/{}'.format(user_id)).status_code, 404)
+
+        unavailable_login = self.client.post('/admin/login', data={
+            'account': account, 'password': 'Secret1!', 'submit': '登录'
+        }, follow_redirects=True)
+        self.assertIn('账号不存在', unavailable_login.get_data(as_text=True))
+
+        reused_account, registration = self.register('Alice')
+        self.assertEqual(reused_account, account)
+        self.assertIn('您的账号是 {}'.format(account),
+                      registration.get_data(as_text=True))
+        post_after_reuse = self.client.get(
+            '/post/{}'.format(post_id)).get_data(as_text=True)
+        self.assertIn('该用户已注销', post_after_reuse)
 
 
 if __name__ == '__main__':

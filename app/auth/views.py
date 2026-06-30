@@ -6,6 +6,7 @@ from flask import (abort, current_app, flash, redirect, render_template,
 from itsdangerous import URLSafeTimedSerializer as Serializer
 
 from app.decorators import login_required
+from app.accounts import allocate_account
 from app.details import get_details
 from app.extensions import db
 from app.models import Profile, User
@@ -59,13 +60,14 @@ def register():
     form = RegistrationForm()
     if form.validate_on_submit():
         role = 'admin' if User.query.count() == 0 else 'user'
-        user = User(username=form.account.data,
+        account = allocate_account()
+        user = User(username=account,
                     password_hash=pwd_context.hash(form.password.data),
                     role=role, status='active')
         user.profile = Profile(nickname=form.nickname.data)
         db.session.add(user)
         db.session.commit()
-        flash('注册成功，现在可以登录了。')
+        flash('注册成功，您的账号是 {}，请妥善保存。'.format(account))
         return redirect(url_for('auth.login'))
     return render_template('register.html', form=form, details=details,
                            register=True)

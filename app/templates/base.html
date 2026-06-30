@@ -5,12 +5,13 @@
 
 {% block styles %}
 {{ super() }}
-<link rel="stylesheet" href="{{ url_for('static', filename='custom.css') }}?v=20260630b">
+<link rel="stylesheet" href="{{ url_for('static', filename='custom.css') }}?v=20260630j">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&family=Noto+Serif+SC:wght@500;600;700&display=swap">
 {% endblock %}
 
 {% block head %}
 {{ super() }}
+<meta name="csrf-token" content="{{ csrf_token() }}">
 <link rel="shortcut icon" href="{{ url_for('static', filename='favicon.ico') }}" type="image/x-icon">
 <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}" type="image/x-icon">
 {% endblock %}
@@ -49,7 +50,7 @@
 
     {% if session.logged_in %}
     <div class="sidebar-profile">
-        <div class="profile-avatar-placeholder">{{ details['author_name'][:1]|upper }}</div>
+        <img class="sidebar-profile-avatar" src="{{ url_for('static', filename=details['profile'].avatar or 'images/default-avatar.jpg') }}" alt="{{ details['author_name'] }}的头像">
         <div><strong>{{ details['author_name'] }}</strong><small>欢迎回来</small></div>
     </div>
     {% endif %}
@@ -65,7 +66,7 @@
 
         <p class="sidebar-section-title">账户</p>
         {% if session.logged_in %}
-        <a class="sidebar-link{% if request.blueprint == 'admin' %} active{% endif %}" href="{{ url_for('admin.view_admin') }}">{{ nav_icon('settings') }}<span>个人设置</span></a>
+        <a class="sidebar-link{% if request.endpoint in ['user.settings_profile', 'user.settings_music', 'auth.change_account', 'auth.change_password'] %} active{% endif %}" href="{{ url_for('user.settings_profile') }}">{{ nav_icon('settings') }}<span>个人设置</span></a>
         <a class="sidebar-link" href="{{ url_for('auth.logout') }}">{{ nav_icon('logout') }}<span>退出登录</span></a>
         {% else %}
         <a class="sidebar-link{% if request.endpoint == 'auth.login' %} active{% endif %}" href="{{ url_for('auth.login') }}">{{ nav_icon('login') }}<span>登录</span></a>
@@ -102,7 +103,7 @@
         <span>{{ details['chronofile_name'] }}</span>
     </header>
     <main id="content" class="app-content">
-        <div class="content-glass-panel">
+        <div class="content-glass-panel {% block content_panel_class %}{% endblock %}">
             {% for message in get_flashed_messages() %}
             <div class="alert alert-info glass-alert">
                 <a href="#" class="close" data-dismiss="alert" aria-label="关闭">&times;</a>
@@ -148,6 +149,32 @@
     closeButton.addEventListener('click', function() { setSidebar(false); });
     backdrop.addEventListener('click', function() { setSidebar(false); });
     document.addEventListener('keydown', function(event) { if (event.key === 'Escape') setSidebar(false); });
+
+    var csrfToken = document.querySelector('meta[name="csrf-token"]').content;
+    document.addEventListener('click', function(event) {
+        var button = event.target.closest('.js-post-like');
+        if (!button || button.disabled) return;
+        var liked = button.dataset.liked === 'true';
+        button.disabled = true;
+        fetch(button.dataset.likeUrl, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrfToken},
+            body: JSON.stringify({action: liked ? 'unlike' : 'like'})
+        }).then(function(response) {
+            if (!response.ok) throw new Error('like request failed');
+            return response.json();
+        }).then(function(data) {
+            button.dataset.liked = data.liked ? 'true' : 'false';
+            button.classList.toggle('liked', data.liked);
+            button.setAttribute('aria-pressed', data.liked ? 'true' : 'false');
+            button.setAttribute('aria-label', data.liked ? '取消点赞' : '点赞');
+            button.querySelector('.like-glyph').textContent = data.liked ? '♥' : '♡';
+            button.querySelector('.like-count').textContent = data.likes;
+        }).catch(function() {
+            button.classList.add('like-error');
+            window.setTimeout(function() { button.classList.remove('like-error'); }, 900);
+        }).finally(function() { button.disabled = false; });
+    });
 
     var audio = document.getElementById('bgMusic');
     var toggle = document.getElementById('musicToggle');

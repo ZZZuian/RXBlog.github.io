@@ -11,10 +11,9 @@ from app.models import (Comment, GuestbookMessage, Post, PostLike,
 from app.netease import NeteaseMusicError, query_netease_song
 from app.taxonomy import CATEGORIES, CATEGORY_META
 import os
-from pathlib import Path
 
-from app.uploads import (UploadValidationError, cleanup_paths,
-                         prepare_single_file, single_file_absolute_path)
+from app.uploads import (UploadValidationError, prepare_single_file,
+                         single_file_absolute_path)
 from . import user
 
 
@@ -89,13 +88,6 @@ def view_user_profile(user_id):
         .where(Post.author_id == user_id, Comment.status == 'visible')
     ) or 0
 
-    music_tracks = db.session.scalars(
-        select(UserMusicTrack).where(
-            UserMusicTrack.user_id == user_id,
-            UserMusicTrack.is_enabled == True
-        ).order_by(UserMusicTrack.sort_order, UserMusicTrack.id)
-    ).all()
-
     guestbook_messages = db.session.scalars(
         select(GuestbookMessage).where(
             GuestbookMessage.profile_user_id == user_id,
@@ -133,7 +125,6 @@ def view_user_profile(user_id):
                            post_count=post_count,
                            like_count=like_count,
                            comment_count=comment_count,
-                           music_tracks=music_tracks,
                            guestbook_messages=guestbook_messages,
                            comment_counts=comment_counts,
                            is_owner=is_owner,
@@ -366,25 +357,6 @@ def settings_music():
     return render_template('settings_music.html',
                            tracks=tracks,
                            details=get_details())
-
-
-@user.route('/api/user/<int:user_id>/music')
-def api_user_music(user_id):
-    profile_user = db.session.get(User, user_id)
-    if not profile_user or profile_user.status != 'active':
-        return jsonify([])
-    tracks = db.session.scalars(
-        select(UserMusicTrack).where(
-            UserMusicTrack.user_id == user_id,
-            UserMusicTrack.is_enabled == True
-        ).order_by(UserMusicTrack.sort_order, UserMusicTrack.id)
-    ).all()
-
-    result = []
-    for t in tracks:
-        result.append(_serialize_music_track(t))
-
-    return jsonify(result)
 
 
 def _serialize_music_track(track):

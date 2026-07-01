@@ -21,19 +21,6 @@ def no_hashtags(form, field):
         raise ValidationError(Markup("标签不需要以 \
             <code>#</code> 开头。"))
 
-def use_commas(form, field):
-    if field.data and re.search(r'(?<!,)\s+', field.data):
-        raise ValidationError(Markup(
-            '请使用逗号分隔标签，格式如下：<code>tag1, tag2</code>。'))
-
-
-class EditEntryForm(Form):
-    new_entry = StringField('编辑记录内容：', validators=[DataRequired()])
-    new_tags = StringField("编辑标签：（用逗号分隔，无需使用 #）", \
-        validators=[no_hashtags, use_commas])
-    submit = SubmitField('保存修改')
-
-
 class CommentForm(Form):
     content = TextAreaField('评论内容', validators=[DataRequired(), Length(max=500)])
     submit = SubmitField('发表评论')

@@ -615,6 +615,20 @@ a:hover {
 
 .post-editor { max-width: 850px; margin: 0 auto 40px; }
 .post-content-input { resize: vertical; min-height: 240px; }
+.post-music-setting {
+    margin: 22px 0;
+    padding: 20px;
+    background: rgba(111,99,219,.08);
+    border: 1px solid var(--glass-border);
+    border-radius: 16px;
+}
+.post-music-setting h3 { margin: 0 0 16px; color: var(--text-main); }
+.comment-submit-status {
+    display: inline-block;
+    margin-left: 10px;
+    color: var(--text-muted);
+    font-size: 13px;
+}
 .image-manage-grid, .post-gallery {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr));
@@ -1679,6 +1693,8 @@ body.dark .account-danger-zone h3 { color: #ff9ba4; }
     border-radius: 50%;
     box-shadow: 0 7px 20px rgba(30,24,70,.24);
 }
+.music-disc.has-cover { background-position: center; background-size: cover; }
+.music-disc.has-cover span { background: rgba(235,232,255,.88); }
 .music-disc span { position: absolute; inset: 15px; background: #e8e4ff; border-radius: 50%; }
 .music-disc.spinning { animation: sidebarDisc 7s linear infinite; }
 @keyframes sidebarDisc { to { transform: rotate(360deg); } }
@@ -1705,6 +1721,17 @@ body.dark .account-danger-zone h3 { color: #ff9ba4; }
 .music-btn.playing .icon-play { display: none; }
 .music-btn.playing .icon-pause { display: block; }
 .music-volume { width: 88px; height: 3px; }
+.music-skip-btn { background: rgba(103,94,199,.72); }
+
+.music-source-section {
+    margin: 0 0 24px;
+    padding: 22px;
+    background: rgba(255,255,255,.2);
+    border: 1px solid var(--glass-border);
+    border-radius: 16px;
+}
+.music-source-section h3 { margin: 0 0 18px; color: var(--text-main); }
+body.dark .music-source-section { background: rgba(9,12,28,.2); }
 
 #themeToggle.sidebar-theme {
     display: flex !important;
@@ -1763,6 +1790,9 @@ body.dark .theme-moon { display: block; }
     -webkit-backdrop-filter: blur(25px) saturate(130%);
     transition: background .35s ease, border-color .35s ease;
 }
+
+.content-glass-panel { transition: opacity .16s ease; }
+body.pjax-loading .content-glass-panel { opacity: .72; }
 
 /* 个人主页直接展示用户自定义背景，仅资料统计卡保留毛玻璃。 */
 .content-glass-panel.profile-page-panel {

@@ -24,7 +24,7 @@
     <button class="like-btn js-post-like{% if liked %} liked{% endif %}" type="button" data-like-url="{{ url_for('main.like_post', post_id=post.id) }}" data-liked="{{ 'true' if liked else 'false' }}" aria-pressed="{{ 'true' if liked else 'false' }}" aria-label="{{ '取消点赞' if liked else '点赞' }}"><span class="like-glyph">{% if liked %}♥{% else %}♡{% endif %}</span> <span class="like-count">{{ post.likes_count }}</span></button>
     {% else %}<span>♡ {{ post.likes_count }}</span>{% endif %}
 
-    {% if session.user_id == post.author_id %}
+    {% if session.user_id == post.author_id or is_admin %}
     <a class="btn btn-default" href="{{ url_for('main.edit_post', post_id=post.id) }}">编辑记录</a>
     <form method="post" action="{{ url_for('main.delete_post', post_id=post.id) }}" class="entry-delete-form" onsubmit="return confirm('确定删除这条记录吗？');">
         {{ delete_form.hidden_tag() }}
@@ -34,8 +34,8 @@
 </div>
 
 <div class="comment-section">
-    <h3>评论 ({{ comments|length }})</h3>
-    <div class="comment-list">
+    <h3 id="commentCount" data-count="{{ comments|length }}">评论 ({{ comments|length }})</h3>
+    <div class="comment-list" id="commentList">
     {% for comment in comments %}
     <div class="comment-item" id="comment-{{ comment.id }}">
         <div class="comment-header">
@@ -67,33 +67,19 @@
     </div>
     {% if session.logged_in %}
     <div class="comment-form">
-        {{ wtf.quick_form(comment_form) }}
+        <form class="js-comment-form" method="post" action="{{ url_for('main.view_post', post_id=post.id) }}" data-api-url="{{ url_for('main.api_add_comment', post_id=post.id) }}">
+            {{ comment_form.hidden_tag() }}
+            <div class="form-group">
+                {{ comment_form.content.label }}
+                {{ comment_form.content(class_='form-control', rows=3, maxlength=500, placeholder='写下你的评论……') }}
+            </div>
+            {{ comment_form.submit(class_='btn btn-primary') }}
+            <span class="comment-submit-status" aria-live="polite"></span>
+        </form>
     </div>
     {% else %}
     <p class="login-hint"><a href="{{ url_for('auth.login', next=request.url) }}">登录</a>后参与评论。</p>
     {% endif %}
 </div>
 
-{% if post.display_images %}
-<script>
-(function() {
-    var lightbox = document.getElementById('imageLightbox');
-    var image = lightbox.querySelector('img');
-    function closeLightbox() { lightbox.hidden = true; image.src = ''; }
-    document.querySelectorAll('.gallery-thumb').forEach(function(button) {
-        button.addEventListener('click', function() {
-            image.src = button.dataset.full;
-            lightbox.hidden = false;
-        });
-    });
-    lightbox.querySelector('.lightbox-close').addEventListener('click', closeLightbox);
-    lightbox.addEventListener('click', function(event) {
-        if (event.target === lightbox) closeLightbox();
-    });
-    document.addEventListener('keydown', function(event) {
-        if (event.key === 'Escape') closeLightbox();
-    });
-})();
-</script>
-{% endif %}
 {% endblock %}

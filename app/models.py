@@ -66,6 +66,10 @@ class Post(db.Model):
     created_at = db.Column(db.DateTime, nullable=False, default=utcnow, index=True)
     updated_at = db.Column(db.DateTime, nullable=False, default=utcnow,
                            onupdate=utcnow)
+    music_track_id = db.Column(
+        db.Integer,
+        db.ForeignKey('user_music_tracks.id', ondelete='SET NULL'),
+        nullable=True, index=True)
 
     author = db.relationship('User', back_populates='posts')
     comments = db.relationship('Comment', back_populates='post',
@@ -75,6 +79,8 @@ class Post(db.Model):
     image_items = db.relationship('PostImage', back_populates='post',
                                   cascade='all, delete-orphan',
                                   order_by='PostImage.sort_order')
+    music_track = db.relationship('UserMusicTrack',
+                                  foreign_keys=[music_track_id])
 
     @property
     def likes_count(self):
@@ -172,6 +178,11 @@ class UserMusicTrack(db.Model):
     artist = db.Column(db.String(100), nullable=False, default='')
     audio_path = db.Column(db.String(255), nullable=False)
     cover_path = db.Column(db.String(255), nullable=False, default='')
+    source_type = db.Column(db.String(20), nullable=False, default='upload')
+    source_id = db.Column(db.String(64), nullable=False, default='')
+    stream_url = db.Column(db.String(500), nullable=False, default='')
+    cover_url = db.Column(db.String(500), nullable=False, default='')
+    duration_ms = db.Column(db.Integer, nullable=False, default=0)
     sort_order = db.Column(db.Integer, nullable=False, default=0)
     is_enabled = db.Column(db.Boolean, nullable=False, default=True)
     created_at = db.Column(db.DateTime, nullable=False, default=utcnow)

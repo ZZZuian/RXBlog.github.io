@@ -3,6 +3,7 @@ import os
 import shutil
 from datetime import datetime
 from pathlib import Path
+from sqlalchemy import inspect, text
 
 from .extensions import db
 from .accounts import release_account
@@ -14,6 +15,43 @@ MIGRATION_NAME = 'tinydb_to_sqlite_v1'
 SINGLE_COMMUNITY_MIGRATION = 'collapse_boards_to_single_community_v1'
 SINGLE_FILE_PATH_MIGRATION = 'single_file_static_paths_v1'
 DEACTIVATED_IDENTITY_MIGRATION = 'release_deactivated_identities_v1'
+
+
+def migrate_music_sources_schema():
+    """Add remote music source columns to an existing SQLite database."""
+    columns = {column['name'] for column in
+               inspect(db.engine).get_columns('user_music_tracks')}
+    additions = {
+        'source_type': "VARCHAR(20) NOT NULL DEFAULT 'upload'",
+        'source_id': "VARCHAR(64) NOT NULL DEFAULT ''",
+        'stream_url': "VARCHAR(500) NOT NULL DEFAULT ''",
+        'cover_url': "VARCHAR(500) NOT NULL DEFAULT ''",
+        'duration_ms': "INTEGER NOT NULL DEFAULT 0",
+    }
+    changed = False
+    for name, definition in additions.items():
+        if name not in columns:
+            db.session.execute(text(
+                'ALTER TABLE user_music_tracks ADD COLUMN {} {}'.format(
+                    name, definition)))
+            changed = True
+    if changed:
+        db.session.commit()
+    return changed
+
+
+def migrate_post_music_schema():
+    """Add nullable post music reference without rebuilding existing posts."""
+    columns = {column['name'] for column in inspect(db.engine).get_columns('posts')}
+    if 'music_track_id' in columns:
+        return False
+    db.session.execute(text(
+        'ALTER TABLE posts ADD COLUMN music_track_id INTEGER NULL'))
+    db.session.execute(text(
+        'CREATE INDEX IF NOT EXISTS ix_posts_music_track_id '
+        'ON posts (music_track_id)'))
+    db.session.commit()
+    return True
 
 
 def _table(data, name):

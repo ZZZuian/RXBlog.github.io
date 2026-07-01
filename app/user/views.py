@@ -8,6 +8,7 @@ from app.details import get_details
 from app.extensions import db
 from app.models import (Comment, GuestbookMessage, Post, PostLike,
                         User, UserMusicTrack)
+from app.netease import NeteaseMusicError, query_netease_song
 import os
 from pathlib import Path
 
@@ -88,6 +89,7 @@ def view_user_profile(user_id):
                            comment_counts=comment_counts,
                            is_owner=is_owner,
                            is_admin=is_admin,
+                           music_profile_user_id=user_id,
                            details=get_details())
 
 
@@ -220,6 +222,7 @@ def settings_music():
                     artist=artist,
                     audio_path=audio_path,
                     cover_path=cover_path,
+                    source_type='upload',
                     sort_order=0,
                     is_enabled=True
                 )
@@ -233,18 +236,52 @@ def settings_music():
                 db.session.rollback()
                 raise
 
+        elif action == 'add_netease':
+            song_id = request.form.get('song_id', '').strip()
+            try:
+                song = query_netease_song(song_id)
+                duplicate = UserMusicTrack.query.filter_by(
+                    user_id=current_user.id, source_type='netease',
+                    source_id=song['id']).first()
+                if duplicate:
+                    duplicate.title = song['title']
+                    duplicate.artist = song['artist']
+                    duplicate.stream_url = song['stream_url']
+                    duplicate.cover_url = song['cover']
+                    duplicate.duration_ms = song['duration_ms']
+                    duplicate.is_enabled = True
+                    db.session.commit()
+                    flash('这首网易云歌曲的信息已更新。')
+                else:
+                    db.session.add(UserMusicTrack(
+                        user_id=current_user.id,
+                        title=song['title'], artist=song['artist'],
+                        audio_path='', cover_path='',
+                        source_type='netease', source_id=song['id'],
+                        stream_url=song['stream_url'],
+                        cover_url=song['cover'],
+                        duration_ms=song['duration_ms'], is_enabled=True))
+                    db.session.commit()
+                    flash('网易云歌曲已添加。')
+            except NeteaseMusicError as error:
+                db.session.rollback()
+                flash(str(error))
+
         elif action == 'delete':
             track_id = request.form.get('track_id', type=int)
             if track_id:
                 track = db.session.get(UserMusicTrack, track_id)
                 if track and track.user_id == current_user.id:
-                    audio_path = single_file_absolute_path(track.audio_path)
+                    audio_path = (single_file_absolute_path(track.audio_path)
+                                  if track.audio_path else None)
                     cover_path = single_file_absolute_path(
                         track.cover_path) if track.cover_path else None
-                    if os.path.exists(audio_path):
+                    if audio_path and os.path.exists(audio_path):
                         os.remove(audio_path)
                     if cover_path and os.path.exists(cover_path):
                         os.remove(cover_path)
+                    Post.query.filter_by(music_track_id=track.id).update(
+                        {Post.music_track_id: None}, synchronize_session=False)
                     db.session.delete(track)
                     db.session.commit()
                     flash('音乐已删除。')
@@ -284,6 +321,9 @@ def settings_music():
 
 @user.route('/api/user/<int:user_id>/music')
 def api_user_music(user_id):
+    profile_user = db.session.get(User, user_id)
+    if not profile_user or profile_user.status != 'active':
+        return jsonify([])
     tracks = db.session.scalars(
         select(UserMusicTrack).where(
             UserMusicTrack.user_id == user_id,
@@ -293,15 +333,114 @@ def api_user_music(user_id):
 
     result = []
     for t in tracks:
-        result.append({
-            'id': t.id,
-            'title': t.title,
-            'artist': t.artist,
-            'audio': url_for('static', filename=t.audio_path),
-            'cover': url_for('static', filename=t.cover_path) if t.cover_path else ''
-        })
+        result.append(_serialize_music_track(t))
 
     return jsonify(result)
+
+
+def _serialize_music_track(track):
+    remote = track.source_type == 'netease'
+    music_key = ('netease:{}'.format(track.source_id) if remote and
+                 track.source_id else 'upload:{}'.format(track.id))
+    return {
+        'id': track.id,
+        'key': music_key,
+        'source_type': track.source_type,
+        'source_id': track.source_id,
+        'title': track.title,
+        'artist': track.artist,
+        'audio': (track.stream_url if remote else
+                  url_for('static', filename=track.audio_path)),
+        'cover': (track.cover_url if remote else
+                  (url_for('static', filename=track.cover_path)
+                   if track.cover_path else '')),
+        'duration': (track.duration_ms or 0) / 1000
+    }
+
+
+def _enabled_music(user_id):
+    if not user_id:
+        return []
+    owner = db.session.get(User, user_id)
+    if not owner or owner.status != 'active':
+        return []
+    return db.session.scalars(
+        select(UserMusicTrack).where(
+            UserMusicTrack.user_id == user_id,
+            UserMusicTrack.is_enabled == True
+        ).order_by(UserMusicTrack.sort_order, UserMusicTrack.id)
+    ).all()
+
+
+@user.route('/api/music/context')
+def api_music_context():
+    post_id = request.args.get('post_id', type=int)
+    profile_user_id = request.args.get('profile_user_id', type=int)
+    if post_id:
+        post = db.session.scalar(select(Post).where(
+            Post.id == post_id, Post.status == 'published'))
+        if post and post.author.status == 'active':
+            track = post.music_track
+            if (track and track.is_enabled and
+                    track.user_id == post.author_id):
+                return jsonify({
+                    'source': 'post:{}'.format(post.id),
+                    'source_type': 'post',
+                    'playlist': [_serialize_music_track(track)]
+                })
+            author_tracks = _enabled_music(post.author_id)
+            if author_tracks:
+                return jsonify({
+                    'source': 'user:{}'.format(post.author_id),
+                    'source_type': 'author',
+                    'playlist': [_serialize_music_track(track)
+                                 for track in author_tracks]
+                })
+        return _default_music_context()
+
+    tracks = _enabled_music(profile_user_id)
+    source = 'user:{}'.format(profile_user_id) if tracks else ''
+
+    if not tracks and session.get('logged_in'):
+        current_user_id = session.get('user_id')
+        tracks = _enabled_music(current_user_id)
+        source = 'user:{}'.format(current_user_id) if tracks else ''
+
+    if tracks:
+        return jsonify({
+            'source': source,
+            'source_type': 'profile' if profile_user_id and
+                           source == 'user:{}'.format(profile_user_id)
+                           else 'self',
+            'playlist': [_serialize_music_track(track) for track in tracks]
+        })
+
+    return _default_music_context()
+
+
+def _default_music_context():
+    return jsonify({
+        'source': 'default',
+        'source_type': 'default',
+        'playlist': [{
+            'id': 'default-bgm', 'key': 'default-bgm',
+            'source_type': 'default',
+            'source_id': '', 'title': '默认bgm', 'artist': '',
+            'audio': url_for('static', filename='music/bgm.mp3'),
+            'cover': url_for('static', filename='images/default-bgm-cover.png'),
+            'duration': 0
+        }]
+    })
+
+
+@user.route('/api/music/netease/<song_id>')
+@login_required
+def api_netease_music(song_id):
+    try:
+        return jsonify({'success': True,
+                        'data': query_netease_song(song_id)})
+    except NeteaseMusicError as error:
+        return jsonify({'success': False, 'message': str(error)}), 400
 
 
 @user.route('/guestbook/<int:user_id>/post', methods=['POST'])

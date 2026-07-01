@@ -1,4 +1,5 @@
 import json
+import importlib
 import os
 import re
 import shutil
@@ -7,6 +8,7 @@ import unittest
 from datetime import datetime
 from io import BytesIO
 from pathlib import Path
+from unittest.mock import patch
 
 
 _temp_dir = tempfile.TemporaryDirectory()
@@ -22,7 +24,8 @@ from app import app
 from app.extensions import db
 from app.migration import migrate_tinydb
 from app.models import (Comment, Media, MigrationState, Post, PostImage,
-                        PostLike, Profile, SiteSetting, User)
+                        PostLike, Profile, SiteSetting, User, UserMusicTrack)
+from app.netease import NeteaseMusicError, query_netease_song
 
 
 class CommunityPlatformTest(unittest.TestCase):
@@ -339,6 +342,19 @@ class CommunityPlatformTest(unittest.TestCase):
                 headers={'X-CSRFToken': match.group(1)})
             self.assertEqual(response.status_code, 200)
             self.assertTrue(response.get_json()['liked'])
+
+            entry_html = self.client.get(
+                '/post/{}'.format(post_id)).get_data(as_text=True)
+            self.assertIn('js-comment-form', entry_html)
+            comment_response = self.client.post(
+                '/api/post/{}/comments'.format(post_id),
+                json={'content': 'AJAX comment without reload'},
+                headers={'X-CSRFToken': match.group(1)})
+            self.assertEqual(comment_response.status_code, 201)
+            self.assertEqual(comment_response.get_json()['count'], 1)
+            with app.app_context():
+                self.assertIsNotNone(Comment.query.filter_by(
+                    content='AJAX comment without reload').first())
         finally:
             app.config['WTF_CSRF_ENABLED'] = False
 
@@ -407,6 +423,180 @@ class CommunityPlatformTest(unittest.TestCase):
         post_after_reuse = self.client.get(
             '/post/{}'.format(post_id)).get_data(as_text=True)
         self.assertIn('该用户已注销', post_after_reuse)
+
+    def test_music_context_priority_and_profile_player_is_global(self):
+        alice_account, _ = self.register('Alice')
+        bob_account, _ = self.register('Bob')
+        charlie_account, _ = self.register('Charlie')
+        with app.app_context():
+            alice = User.query.filter_by(username=alice_account).one()
+            bob = User.query.filter_by(username=bob_account).one()
+            charlie = User.query.filter_by(username=charlie_account).one()
+            db.session.add_all([
+                UserMusicTrack(user_id=alice.id, title='Alice Song',
+                               artist='A', audio_path='uploads/music/a.mp3',
+                               source_type='upload'),
+                UserMusicTrack(user_id=bob.id, title='Bob Cloud Song',
+                               artist='B', audio_path='',
+                               source_type='netease', source_id='123',
+                               stream_url='https://example.test/123.mp3')
+            ])
+            db.session.commit()
+            alice_id, bob_id, charlie_id = alice.id, bob.id, charlie.id
+
+        guest_profile = self.client.get(
+            '/api/music/context?profile_user_id={}'.format(alice_id)).get_json()
+        self.assertEqual(guest_profile['source'], 'user:{}'.format(alice_id))
+        self.assertEqual(guest_profile['playlist'][0]['title'], 'Alice Song')
+        self.assertEqual(self.client.get(
+            '/api/music/context').get_json()['source'], 'default')
+
+        self.login(bob_account)
+        own_context = self.client.get('/api/music/context').get_json()
+        self.assertEqual(own_context['source'], 'user:{}'.format(bob_id))
+        self.assertEqual(own_context['playlist'][0]['source_type'], 'netease')
+        self.assertEqual(own_context['playlist'][0]['audio'],
+                         'https://example.test/123.mp3')
+        other_profile = self.client.get(
+            '/api/music/context?profile_user_id={}'.format(alice_id)).get_json()
+        self.assertEqual(other_profile['source'], 'user:{}'.format(alice_id))
+        no_music_profile = self.client.get(
+            '/api/music/context?profile_user_id={}'.format(charlie_id)).get_json()
+        self.assertEqual(no_music_profile['source'], 'user:{}'.format(bob_id))
+
+        profile_html = self.client.get(
+            '/user/{}'.format(alice_id)).get_data(as_text=True)
+        self.assertIn('data-profile-user-id="{}"'.format(alice_id), profile_html)
+        self.assertNotIn('new Audio()', profile_html)
+        settings_html = self.client.get(
+            '/settings/music').get_data(as_text=True)
+        self.assertIn('add_netease', settings_html)
+        self.assertIn('audio.loop = playlist.length === 1', profile_html)
+        self.assertIn('effectiveDuration()', profile_html)
+        self.assertNotIn('progress.dragging', profile_html)
+        self.assertIn('trackKey', profile_html)
+        self.assertIn('function navigatePjax', profile_html)
+        self.assertIn('function refreshMusicContext', profile_html)
+        self.assertIn("window.addEventListener('popstate'", profile_html)
+
+    def test_netease_song_metadata_parsing_and_validation(self):
+        payload = {'songs': [{
+            'name': 'Cloud Song',
+            'artists': [{'name': 'Cloud Artist'}],
+            'album': {'picUrl': 'https://example.test/cover.jpg'}
+        }]}
+        with patch('app.netease._request_json', return_value=payload):
+            song = query_netease_song('1809646618')
+        self.assertEqual(song['title'], 'Cloud Song')
+        self.assertEqual(song['artist'], 'Cloud Artist')
+        self.assertEqual(song['cover'], 'https://example.test/cover.jpg')
+        self.assertIn('1809646618.mp3', song['stream_url'])
+        with self.assertRaises(NeteaseMusicError):
+            query_netease_song('not-an-id')
+
+        account, _ = self.register('Music User')
+        self.login(account)
+        user_views = importlib.import_module('app.user.views')
+        with patch.object(user_views, 'query_netease_song', return_value=song):
+            response = self.client.post('/settings/music', data={
+                'action': 'add_netease', 'song_id': '1809646618'
+            }, follow_redirects=True)
+        self.assertIn('网易云歌曲已添加', response.get_data(as_text=True))
+        with app.app_context():
+            track = UserMusicTrack.query.filter_by(
+                source_type='netease', source_id='1809646618').one()
+            self.assertEqual(track.title, 'Cloud Song')
+            self.assertEqual(track.audio_path, '')
+            self.assertTrue(track.stream_url.endswith('1809646618.mp3'))
+
+    def test_post_music_priority_edit_delete_and_permissions(self):
+        alice_account, _ = self.register('Alice')
+        bob_account, _ = self.register('Bob')
+        charlie_account, _ = self.register('Charlie')
+        with app.app_context():
+            alice = User.query.filter_by(username=alice_account).one()
+            bob = User.query.filter_by(username=bob_account).one()
+            charlie = User.query.filter_by(username=charlie_account).one()
+            alice_one = UserMusicTrack(
+                user_id=alice.id, title='Alice One', artist='A',
+                audio_path='uploads/music/alice-one.mp3', source_type='upload')
+            alice_two = UserMusicTrack(
+                user_id=alice.id, title='Alice Two', artist='A',
+                audio_path='uploads/music/alice-two.mp3', source_type='upload')
+            bob_track = UserMusicTrack(
+                user_id=bob.id, title='Bob One', artist='B',
+                audio_path='uploads/music/bob-one.mp3', source_type='upload')
+            db.session.add_all([alice_one, alice_two, bob_track])
+            db.session.flush()
+            custom_post = Post(
+                author_id=alice.id, title='Custom music post', content='body',
+                status='published', music_track_id=alice_one.id)
+            author_fallback = Post(
+                author_id=alice.id, title='Author fallback', content='body',
+                status='published')
+            default_fallback = Post(
+                author_id=charlie.id, title='Default fallback', content='body',
+                status='published')
+            bob_post = Post(
+                author_id=bob.id, title='Admin managed', content='body',
+                status='published')
+            db.session.add_all([custom_post, author_fallback,
+                                default_fallback, bob_post])
+            db.session.commit()
+            ids = {
+                'custom': custom_post.id, 'author': author_fallback.id,
+                'default': default_fallback.id, 'bob_post': bob_post.id,
+                'alice_one': alice_one.id, 'alice_two': alice_two.id,
+                'bob_track': bob_track.id
+            }
+
+        custom_context = self.client.get(
+            '/api/music/context?post_id={}'.format(ids['custom'])).get_json()
+        self.assertEqual(custom_context['source_type'], 'post')
+        self.assertEqual(custom_context['playlist'][0]['id'], ids['alice_one'])
+        author_context = self.client.get(
+            '/api/music/context?post_id={}'.format(ids['author'])).get_json()
+        self.assertEqual(author_context['source_type'], 'author')
+        default_context = self.client.get(
+            '/api/music/context?post_id={}'.format(ids['default'])).get_json()
+        self.assertEqual(default_context['source_type'], 'default')
+
+        self.login(charlie_account)
+        self.assertEqual(self.client.get(
+            '/post/{}/edit'.format(ids['custom'])).status_code, 403)
+        self.logout()
+
+        self.login(alice_account)
+        replacement = self.client.post(
+            '/post/{}/edit'.format(ids['custom']), data={
+                'title': 'Custom music post', 'content': 'body', 'tags': '',
+                'music_track_id': str(ids['alice_two']), 'submit': '保存修改'
+            }, follow_redirects=False)
+        self.assertEqual(replacement.status_code, 302)
+        replaced_context = self.client.get(
+            '/api/music/context?post_id={}'.format(ids['custom'])).get_json()
+        self.assertEqual(replaced_context['playlist'][0]['id'],
+                         ids['alice_two'])
+
+        self.client.post('/settings/music', data={
+            'action': 'delete', 'track_id': str(ids['alice_two'])
+        }, follow_redirects=True)
+        with app.app_context():
+            self.assertIsNone(db.session.get(
+                Post, ids['custom']).music_track_id)
+        after_delete = self.client.get(
+            '/api/music/context?post_id={}'.format(ids['custom'])).get_json()
+        self.assertEqual(after_delete['source_type'], 'author')
+
+        admin_edit = self.client.post(
+            '/post/{}/edit'.format(ids['bob_post']), data={
+                'title': 'Admin managed', 'content': 'body', 'tags': '',
+                'music_track_id': str(ids['bob_track']), 'submit': '保存修改'
+            }, follow_redirects=False)
+        self.assertEqual(admin_edit.status_code, 302)
+        with app.app_context():
+            self.assertEqual(db.session.get(
+                Post, ids['bob_post']).music_track_id, ids['bob_track'])
 
 
 if __name__ == '__main__':

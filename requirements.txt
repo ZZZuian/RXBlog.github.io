@@ -7,3 +7,5 @@ WTForms>=3.0
 itsdangerous>=2.1
 passlib>=1.7.4
 Pillow>=10.0
+requests>=2.31
+certifi>=2024.2.2

@@ -12,8 +12,24 @@
 
     <div class="settings-panel">
         <h2>主页背景音乐</h2>
-        <p class="settings-description">添加的音乐会显示在你的公开个人主页中，可随时启用、禁用或删除。</p>
+        <p class="settings-description">可通过网易云歌曲 ID 或本地文件添加音乐。访客进入你的主页时会优先播放这里启用的歌单。</p>
 
+        <section class="music-source-section">
+            <h3>添加网易云歌曲</h3>
+            <form method="post" class="settings-form netease-add-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="action" value="add_netease">
+                <div class="form-group">
+                    <label for="song_id">网易云歌曲 ID</label>
+                    <input type="text" id="song_id" name="song_id" inputmode="numeric" pattern="[0-9]+" placeholder="例如：1809646618" maxlength="20" required>
+                    <p class="help-text">歌曲详情页地址中的数字就是歌曲 ID；VIP、无版权或地区限制歌曲可能无法播放。</p>
+                </div>
+                <button type="submit" class="btn btn-primary">查询并添加</button>
+            </form>
+        </section>
+
+        <section class="music-source-section">
+        <h3>上传本地音乐</h3>
         <form method="post" enctype="multipart/form-data" class="settings-form">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="action" value="add">
@@ -42,6 +58,7 @@
 
             <button type="submit" class="btn btn-primary">添加音乐</button>
         </form>
+        </section>
 
         {% if tracks %}
         <div class="music-track-list">
@@ -50,7 +67,7 @@
             <div class="music-track-item">
                 <div class="music-track-info">
                     <p class="music-track-title">{{ track.title }}</p>
-                    <p class="music-track-artist">{{ track.artist or '未知艺术家' }} · {{ '已启用' if track.is_enabled else '已禁用' }}</p>
+                    <p class="music-track-artist">{{ track.artist or '未知艺术家' }} · {{ '网易云' if track.source_type == 'netease' else '本地上传' }} · {{ '已启用' if track.is_enabled else '已禁用' }}</p>
                 </div>
                 <div class="music-track-actions">
                     <form method="post" style="display: inline;">

@@ -5,7 +5,7 @@
 
 {% block styles %}
 {{ super() }}
-<link rel="stylesheet" href="{{ url_for('static', filename='custom.css') }}?v=20260630j">
+<link rel="stylesheet" href="{{ url_for('static', filename='custom.css') }}?v=20260701b">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&family=Noto+Serif+SC:wght@500;600;700&display=swap">
 {% endblock %}
 
@@ -75,15 +75,21 @@
     </nav>
 
     <div class="sidebar-bottom">
-        <div id="musicPlayer" class="music-player sidebar-music">
+        <div id="musicPlayer" class="music-player sidebar-music" data-profile-user-id="{{ music_profile_user_id|default('', true) }}" data-post-id="{{ music_post_id|default('', true) }}">
             <div class="music-disc" aria-hidden="true"><span></span></div>
             <div class="music-main">
                 <div class="music-heading"><span id="musicTitle" class="music-title">背景音乐</span><span id="musicTime">00:00</span></div>
                 <input type="range" id="musicProgress" class="music-progress" min="0" max="100" value="0" aria-label="音乐进度">
                 <div class="music-actions">
+                    <button id="musicPrev" class="music-btn music-skip-btn" type="button" title="上一首" aria-label="上一首">
+                        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h2v14H6zM18 5v14l-9-7Z"/></svg>
+                    </button>
                     <button id="musicToggle" class="music-btn" type="button" title="播放或暂停" aria-label="播放背景音乐">
                         <svg class="icon-play" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7Z"/></svg>
                         <svg class="icon-pause" viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>
+                    </button>
+                    <button id="musicNext" class="music-btn music-skip-btn" type="button" title="下一首" aria-label="下一首">
+                        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 5h2v14h-2zM6 5v14l9-7Z"/></svg>
                     </button>
                     <input type="range" id="musicVolume" class="music-volume" min="0" max="100" value="70" aria-label="音乐音量">
                 </div>
@@ -116,9 +122,7 @@
     <footer class="site-footer"><span>© 2026 {{ details['author_name'] }}</span><span>{{ details['chronofile_name'] }}</span></footer>
 </div>
 
-<audio id="bgMusic" loop preload="metadata">
-    <source src="{{ url_for('static', filename='music/bgm.mp3') }}" type="audio/mpeg">
-</audio>
+<audio id="bgMusic" preload="metadata"></audio>
 
 {% block scripts %}
 {{ super() }}
@@ -176,12 +180,98 @@
         }).finally(function() { button.disabled = false; });
     });
 
+    document.addEventListener('submit', function(event) {
+        var form = event.target;
+        if (!form.matches('.js-comment-form')) return;
+        event.preventDefault();
+        var textarea = form.querySelector('[name="content"]');
+        var submit = form.querySelector('[type="submit"]');
+        var status = form.querySelector('.comment-submit-status');
+        var content = textarea.value.trim();
+        if (!content) {
+            status.textContent = '请输入评论内容。';
+            return;
+        }
+        submit.disabled = true;
+        status.textContent = '正在发表…';
+        fetch(form.dataset.apiUrl, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json',
+                      'X-CSRFToken': csrfToken},
+            body: JSON.stringify({content: content})
+        }).then(function(response) {
+            return response.json().then(function(payload) {
+                if (!response.ok) throw new Error(payload.error || '评论发表失败。');
+                return payload;
+            });
+        }).then(function(data) {
+            var comment = data.comment;
+            var item = document.createElement('div');
+            item.className = 'comment-item';
+            item.id = 'comment-' + comment.id;
+
+            var header = document.createElement('div');
+            header.className = 'comment-header';
+            var avatarBox = document.createElement('div');
+            avatarBox.className = 'comment-avatar-container';
+            var avatar = document.createElement('img');
+            avatar.className = 'comment-avatar';
+            avatar.src = comment.avatar_url;
+            avatar.alt = comment.nickname;
+            avatarBox.appendChild(avatar);
+
+            var meta = document.createElement('div');
+            meta.className = 'comment-meta';
+            var author = document.createElement('a');
+            author.className = 'comment-author-link comment-nickname';
+            author.href = comment.profile_url;
+            author.textContent = comment.nickname;
+            var createdAt = document.createElement('span');
+            createdAt.className = 'comment-time';
+            createdAt.textContent = comment.created_at;
+            meta.appendChild(author);
+            meta.appendChild(createdAt);
+
+            var body = document.createElement('div');
+            body.className = 'comment-body';
+            body.textContent = comment.content;
+            header.appendChild(avatarBox);
+            header.appendChild(meta);
+            item.appendChild(header);
+            item.appendChild(body);
+            document.getElementById('commentList').appendChild(item);
+
+            var counter = document.getElementById('commentCount');
+            counter.dataset.count = data.count;
+            counter.textContent = '评论 (' + data.count + ')';
+            textarea.value = '';
+            status.textContent = '评论已发表。';
+        }).catch(function(error) {
+            status.textContent = error.message || '评论发表失败，请重试。';
+        }).finally(function() { submit.disabled = false; });
+    });
+
     var audio = document.getElementById('bgMusic');
+    var player = document.getElementById('musicPlayer');
     var toggle = document.getElementById('musicToggle');
+    var previous = document.getElementById('musicPrev');
+    var next = document.getElementById('musicNext');
     var progress = document.getElementById('musicProgress');
     var volume = document.getElementById('musicVolume');
     var title = document.getElementById('musicTitle');
     var time = document.getElementById('musicTime');
+    var disc = document.querySelector('.music-disc');
+    var defaultTrack = {
+        id: 'default-bgm', key: 'default-bgm', title: '默认bgm', artist: '',
+        cover: {{ url_for('static', filename='images/default-bgm-cover.png')|tojson }},
+        duration: 0,
+        audio: {{ url_for('static', filename='music/bgm.mp3')|tojson }}
+    };
+    var playlist = [defaultTrack];
+    var playlistSource = 'default';
+    var currentIndex = 0;
+    var pendingTime = 0;
+    var failedTracks = 0;
     var savedVolume = localStorage.getItem('musicVolume');
     audio.volume = savedVolume === null ? 0.7 : Number(savedVolume) / 100;
     volume.value = Math.round(audio.volume * 100);
@@ -192,11 +282,91 @@
         var rest = Math.floor(seconds % 60);
         return String(minutes).padStart(2, '0') + ':' + String(rest).padStart(2, '0');
     }
+    function effectiveDuration() {
+        if (Number.isFinite(audio.duration) && audio.duration > 0) {
+            return audio.duration;
+        }
+        var trackDuration = Number(playlist[currentIndex] &&
+                                   playlist[currentIndex].duration || 0);
+        if (trackDuration > 0) return trackDuration;
+        if (audio.seekable && audio.seekable.length) {
+            var seekableEnd = audio.seekable.end(audio.seekable.length - 1);
+            if (Number.isFinite(seekableEnd) && seekableEnd > 0) return seekableEnd;
+        }
+        return 0;
+    }
     function syncPlayingState() {
         toggle.classList.toggle('playing', !audio.paused);
         toggle.setAttribute('aria-label', audio.paused ? '播放背景音乐' : '暂停背景音乐');
-        document.querySelector('.music-disc').classList.toggle('spinning', !audio.paused);
+        disc.classList.toggle('spinning', !audio.paused);
     }
+
+    function readMusicState() {
+        try { return JSON.parse(sessionStorage.getItem('rxMusicState') || '{}'); }
+        catch (error) { return {}; }
+    }
+
+    function saveMusicState(timeOverride) {
+        var track = playlist[currentIndex] || defaultTrack;
+        var savedTime = typeof timeOverride === 'number' ?
+                        timeOverride : (audio.currentTime || 0);
+        sessionStorage.setItem('rxMusicState', JSON.stringify({
+            source: playlistSource, index: currentIndex,
+            trackKey: track.key || String(track.id),
+            time: savedTime,
+            volume: audio.volume,
+            playing: localStorage.getItem('musicPlaying') === '1'
+        }));
+    }
+
+    function describeTrack(track) {
+        return track.artist ? track.title + ' · ' + track.artist : track.title;
+    }
+
+    function loadTrack(index, resumeTime) {
+        if (!playlist.length) playlist = [defaultTrack];
+        currentIndex = (index + playlist.length) % playlist.length;
+        var track = playlist[currentIndex];
+        pendingTime = Number(resumeTime || 0);
+        title.textContent = describeTrack(track);
+        disc.style.backgroundImage = track.cover ? 'url("' + track.cover.replace(/"/g, '') + '")' : '';
+        disc.classList.toggle('has-cover', Boolean(track.cover));
+        if (audio.dataset.trackKey === (track.key || String(track.id)) &&
+                audio.currentSrc) {
+            pendingTime = 0;
+            saveMusicState();
+            return;
+        }
+        audio.dataset.trackKey = track.key || String(track.id);
+        audio.src = track.audio;
+        audio.load();
+        saveMusicState(pendingTime);
+    }
+
+    function tryResumePlayback() {
+        if (localStorage.getItem('musicPlaying') !== '1') return;
+        audio.play().then(syncPlayingState).catch(function() {
+            title.textContent = '点击播放 · ' + describeTrack(playlist[currentIndex]);
+        });
+    }
+
+    function applyMusicContext(data) {
+        playlist = data.playlist && data.playlist.length ? data.playlist : [defaultTrack];
+        playlistSource = data.source || 'default';
+        audio.loop = playlist.length === 1;
+        failedTracks = 0;
+        var state = readMusicState();
+        var sameSource = state.source === playlistSource;
+        var keyIndex = playlist.findIndex(function(track) {
+            return (track.key || String(track.id)) === state.trackKey;
+        });
+        var sameTrack = keyIndex >= 0;
+        var index = sameTrack ? keyIndex :
+                    (sameSource && Number(state.index) < playlist.length ?
+                     Number(state.index) : 0);
+        loadTrack(index, sameTrack ? state.time : 0);
+    }
+
     toggle.addEventListener('click', function() {
         if (audio.paused) {
             audio.play().then(function() {
@@ -209,19 +379,31 @@
             syncPlayingState();
         }
     });
+    previous.addEventListener('click', function() {
+        var shouldPlay = !audio.paused || localStorage.getItem('musicPlaying') === '1';
+        loadTrack(currentIndex - 1, 0);
+        if (shouldPlay) audio.addEventListener('canplay', tryResumePlayback, {once: true});
+    });
+    next.addEventListener('click', function() {
+        var shouldPlay = !audio.paused || localStorage.getItem('musicPlaying') === '1';
+        loadTrack(currentIndex + 1, 0);
+        if (shouldPlay) audio.addEventListener('canplay', tryResumePlayback, {once: true});
+    });
     audio.addEventListener('loadedmetadata', function() {
-        var savedTime = Number(sessionStorage.getItem('musicCurrentTime') || 0);
-        if (savedTime > 0 && savedTime < audio.duration) audio.currentTime = savedTime;
+        var duration = effectiveDuration();
+        if (pendingTime > 0 && duration && pendingTime < duration) audio.currentTime = pendingTime;
+        pendingTime = 0;
+        tryResumePlayback();
     });
     audio.addEventListener('timeupdate', function() {
-        if (audio.duration && !progress.dragging) progress.value = audio.currentTime / audio.duration * 100;
+        var duration = effectiveDuration();
+        if (duration) progress.value = Math.min(100, audio.currentTime / duration * 100);
         time.textContent = formatTime(audio.currentTime);
-        sessionStorage.setItem('musicCurrentTime', String(audio.currentTime));
+        saveMusicState();
     });
-    progress.addEventListener('pointerdown', function() { progress.dragging = true; });
-    progress.addEventListener('pointerup', function() { progress.dragging = false; });
     progress.addEventListener('input', function() {
-        if (audio.duration) audio.currentTime = Number(progress.value) / 100 * audio.duration;
+        var duration = effectiveDuration();
+        if (duration) audio.currentTime = Number(progress.value) / 100 * duration;
     });
     volume.addEventListener('input', function() {
         audio.volume = Number(volume.value) / 100;
@@ -229,7 +411,217 @@
     });
     audio.addEventListener('play', syncPlayingState);
     audio.addEventListener('pause', syncPlayingState);
-    audio.addEventListener('error', function() { title.textContent = '音乐文件不可用'; });
+    audio.addEventListener('ended', function() {
+        if (playlist.length === 1) {
+            audio.currentTime = 0;
+            audio.play().catch(function() {});
+        } else {
+            loadTrack(currentIndex + 1, 0);
+        }
+    });
+    audio.addEventListener('error', function() {
+        failedTracks += 1;
+        if (failedTracks < playlist.length) {
+            loadTrack(currentIndex + 1, 0);
+        } else if (playlistSource !== 'default') {
+            playlist = [defaultTrack];
+            playlistSource = 'default';
+            failedTracks = 0;
+            loadTrack(0, 0);
+        } else {
+            title.textContent = '音乐文件不可用';
+        }
+    });
+    window.addEventListener('pagehide', saveMusicState);
+
+    var musicContextSequence = 0;
+    function refreshMusicContext() {
+        var requestSequence = ++musicContextSequence;
+        var contextUrl = {{ url_for('user.api_music_context')|tojson }};
+        if (player.dataset.postId) {
+            contextUrl += '?post_id=' + encodeURIComponent(player.dataset.postId);
+        } else if (player.dataset.profileUserId) {
+            contextUrl += '?profile_user_id=' + encodeURIComponent(player.dataset.profileUserId);
+        }
+        return fetch(contextUrl, {credentials: 'same-origin'}).then(function(response) {
+            if (!response.ok) throw new Error('music context failed');
+            return response.json();
+        }).then(function(data) {
+            if (requestSequence === musicContextSequence) applyMusicContext(data);
+        }).catch(function() {
+            if (requestSequence === musicContextSequence) {
+                applyMusicContext({source: 'default', playlist: [defaultTrack]});
+            }
+        });
+    }
+
+    function initializeProfileContrast() {
+        var hero = document.querySelector('.profile-hero[data-background-url]');
+        if (!hero) return;
+        var image = new Image();
+        image.onload = function() {
+            try {
+                var canvas = document.createElement('canvas');
+                var size = 32;
+                canvas.width = size;
+                canvas.height = size;
+                var context = canvas.getContext('2d', {willReadFrequently: true});
+                context.drawImage(image, 0, 0, size, size);
+                var pixels = context.getImageData(0, 0, size, size).data;
+                var luminance = 0;
+                var samples = 0;
+                for (var i = 0; i < pixels.length; i += 16) {
+                    luminance += (pixels[i] * 0.299 + pixels[i + 1] * 0.587 + pixels[i + 2] * 0.114);
+                    samples += 1;
+                }
+                var useLightText = samples && luminance / samples < 145;
+                hero.classList.toggle('profile-text-light', useLightText);
+                hero.classList.toggle('profile-text-dark', !useLightText);
+            } catch (error) {
+                hero.classList.add('profile-text-dark');
+            }
+        };
+        image.src = hero.dataset.backgroundUrl;
+    }
+
+    function closeLightbox() {
+        var lightbox = document.getElementById('imageLightbox');
+        if (lightbox) lightbox.hidden = true;
+    }
+
+    function initializePageFeatures() {
+        initializeProfileContrast();
+    }
+
+    document.addEventListener('click', function(event) {
+        var thumb = event.target.closest('.gallery-thumb');
+        if (thumb) {
+            var lightbox = document.getElementById('imageLightbox');
+            if (!lightbox) return;
+            lightbox.querySelector('img').src = thumb.dataset.full;
+            lightbox.hidden = false;
+            return;
+        }
+        var close = event.target.closest('.lightbox-close');
+        var overlay = event.target.id === 'imageLightbox';
+        if (close || overlay) closeLightbox();
+    });
+    document.addEventListener('keydown', function(event) {
+        if (event.key === 'Escape') closeLightbox();
+    });
+
+    var pjaxController = null;
+    var pjaxSequence = 0;
+
+    function canUsePjax(link, event) {
+        if (!link || event.defaultPrevented || event.button !== 0 ||
+                event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return false;
+        if (link.target && link.target !== '_self') return false;
+        if (link.hasAttribute('download') || link.dataset.noPjax !== undefined) return false;
+        var url;
+        try { url = new URL(link.href, window.location.href); }
+        catch (error) { return false; }
+        if (url.origin !== window.location.origin || !/^https?:$/.test(url.protocol)) return false;
+        if (url.pathname === {{ url_for('auth.logout')|tojson }}) return false;
+        if (url.pathname === window.location.pathname &&
+                url.search === window.location.search && url.hash) return false;
+        return true;
+    }
+
+    function updateShellFromDocument(nextDocument) {
+        var nextPanel = nextDocument.querySelector('.content-glass-panel');
+        var currentPanel = document.querySelector('.content-glass-panel');
+        var nextPlayer = nextDocument.getElementById('musicPlayer');
+        if (!nextPanel || !currentPanel || !nextPlayer) {
+            throw new Error('PJAX response is missing the application shell');
+        }
+
+        currentPanel.className = nextPanel.className;
+        currentPanel.innerHTML = nextPanel.innerHTML;
+        document.title = nextDocument.title;
+
+        var nextCsrf = nextDocument.querySelector('meta[name="csrf-token"]');
+        var currentCsrf = document.querySelector('meta[name="csrf-token"]');
+        if (nextCsrf && currentCsrf) {
+            currentCsrf.content = nextCsrf.content;
+            csrfToken = nextCsrf.content;
+        }
+
+        player.dataset.profileUserId = nextPlayer.dataset.profileUserId || '';
+        player.dataset.postId = nextPlayer.dataset.postId || '';
+
+        var nextLinks = nextDocument.querySelectorAll('.sidebar-link');
+        var currentLinks = document.querySelectorAll('.sidebar-link');
+        currentLinks.forEach(function(link) { link.classList.remove('active'); });
+        nextLinks.forEach(function(nextLink) {
+            if (!nextLink.classList.contains('active')) return;
+            currentLinks.forEach(function(currentLink) {
+                if (currentLink.getAttribute('href') === nextLink.getAttribute('href')) {
+                    currentLink.classList.add('active');
+                }
+            });
+        });
+    }
+
+    function navigatePjax(target, options) {
+        options = options || {};
+        var url = new URL(target, window.location.href);
+        var sequence = ++pjaxSequence;
+        if (pjaxController) pjaxController.abort();
+        pjaxController = new AbortController();
+        body.classList.add('pjax-loading');
+
+        return fetch(url.href, {
+            method: 'GET',
+            credentials: 'same-origin',
+            headers: {'X-PJAX': 'true', 'X-Requested-With': 'XMLHttpRequest'},
+            signal: pjaxController.signal
+        }).then(function(response) {
+            if (!response.ok) throw new Error('navigation failed');
+            return response.text().then(function(html) {
+                return {html: html, url: response.url};
+            });
+        }).then(function(result) {
+            if (sequence !== pjaxSequence) return;
+            var nextDocument = new DOMParser().parseFromString(result.html, 'text/html');
+            updateShellFromDocument(nextDocument);
+            if (options.history !== false) history.pushState({pjax: true}, '', result.url);
+            if (options.scroll !== false) window.scrollTo({top: 0, behavior: 'auto'});
+            setSidebar(false);
+            initializePageFeatures();
+            refreshMusicContext();
+            document.getElementById('content').focus({preventScroll: true});
+        }).catch(function(error) {
+            if (error.name !== 'AbortError') window.location.assign(url.href);
+        }).finally(function() {
+            if (sequence === pjaxSequence) body.classList.remove('pjax-loading');
+        });
+    }
+
+    document.addEventListener('click', function(event) {
+        var link = event.target.closest('a[href]');
+        if (!canUsePjax(link, event)) return;
+        event.preventDefault();
+        navigatePjax(link.href);
+    });
+
+    document.addEventListener('submit', function(event) {
+        var form = event.target;
+        if (event.defaultPrevented || form.dataset.noPjax !== undefined) return;
+        if ((form.method || 'get').toLowerCase() !== 'get') return;
+        if (form.target && form.target !== '_self') return;
+        event.preventDefault();
+        var url = new URL(form.action || window.location.href, window.location.href);
+        new FormData(form).forEach(function(value, key) { url.searchParams.append(key, value); });
+        navigatePjax(url.href);
+    });
+
+    window.addEventListener('popstate', function() {
+        navigatePjax(window.location.href, {history: false, scroll: false});
+    });
+
+    initializePageFeatures();
+    refreshMusicContext();
     syncPlayingState();
 })();
 </script>

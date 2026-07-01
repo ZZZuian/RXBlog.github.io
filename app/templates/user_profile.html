@@ -51,46 +51,8 @@
         </div>
     </section>
 
-    {% if profile.background_image %}
-    <script>
-    (function() {
-        var hero = document.querySelector('.profile-hero[data-background-url]');
-        if (!hero) return;
-        var image = new Image();
-        image.onload = function() {
-            var canvas = document.createElement('canvas');
-            canvas.width = 48;
-            canvas.height = 24;
-            var context = canvas.getContext('2d', {willReadFrequently: true});
-            var sampleWidth = image.naturalWidth * .56;
-            var sampleHeight = image.naturalHeight * .42;
-            var sourceX = (image.naturalWidth - sampleWidth) / 2;
-            var sourceY = image.naturalHeight * .34;
-            context.drawImage(image, sourceX, sourceY, sampleWidth, sampleHeight,
-                              0, 0, canvas.width, canvas.height);
-            var pixels = context.getImageData(0, 0, canvas.width,
-                                              canvas.height).data;
-            var luminance = 0;
-            var count = 0;
-            for (var index = 0; index < pixels.length; index += 4) {
-                if (pixels[index + 3] < 32) continue;
-                luminance += pixels[index] * .2126 +
-                             pixels[index + 1] * .7152 +
-                             pixels[index + 2] * .0722;
-                count += 1;
-            }
-            var useLightText = count && luminance / count < 148;
-            hero.classList.toggle('profile-text-light', useLightText);
-            hero.classList.toggle('profile-text-dark', !useLightText);
-        };
-        image.onerror = function() { hero.classList.add('profile-text-dark'); };
-        image.src = hero.dataset.backgroundUrl;
-    })();
-    </script>
-    {% endif %}
-
     <div class="profile-content">
-        {% if music_tracks %}
+        {% if false and music_tracks %}
         <div class="music-card" id="musicCard">
             <div class="music-card-header">
                 <span class="music-card-label">🎵 音乐</span>

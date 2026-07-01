@@ -30,8 +30,12 @@ bootstrap = Bootstrap(app)
 with app.app_context():
     from .migration import (migrate_single_community,
                             migrate_deactivated_identities,
+                            migrate_music_sources_schema,
+                            migrate_post_music_schema,
                             migrate_single_file_static_paths, migrate_tinydb)
     db.create_all()
+    migrate_music_sources_schema()
+    migrate_post_music_schema()
     migrate_tinydb()
     migrate_single_community()
     migrate_single_file_static_paths()

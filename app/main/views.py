@@ -7,7 +7,7 @@ from sqlalchemy import func, select
 from app.decorators import login_required
 from app.details import get_details
 from app.extensions import db
-from app.models import Comment, Post, PostLike, User
+from app.models import Comment, Post, PostLike, User, UserMusicTrack
 from app.parse import parse_input
 from app.uploads import (UploadValidationError, cleanup_paths,
                          media_absolute_path, prepare_images, store_images)
@@ -43,6 +43,38 @@ def _add_image_error(form, message):
     errors = list(form.images.errors)
     errors.append(message)
     form.images.errors = errors
+
+
+def _is_admin(user_id=None):
+    user = db.session.get(User, user_id or session.get('user_id'))
+    return bool(user and user.role == 'admin' and user.status == 'active')
+
+
+def _can_manage_post(post):
+    return post.author_id == session.get('user_id') or _is_admin()
+
+
+def _music_choices(owner_id):
+    tracks = db.session.scalars(
+        select(UserMusicTrack).where(UserMusicTrack.user_id == owner_id)
+        .order_by(UserMusicTrack.sort_order, UserMusicTrack.id)
+    ).all()
+    choices = [(0, '不设置，自动使用作者主页音乐或默认音乐')]
+    for track in tracks:
+        source = '网易云' if track.source_type == 'netease' else '本地'
+        state = '' if track.is_enabled else '（已禁用，将自动回退）'
+        choices.append((track.id, '{} - {} [{}]{}'.format(
+            track.title, track.artist or '未知艺术家', source, state)))
+    return choices
+
+
+def _selected_music_track(track_id, owner_id):
+    if not track_id:
+        return None
+    track = db.session.get(UserMusicTrack, track_id)
+    if not track or track.user_id != owner_id:
+        abort(400)
+    return track
 
 
 def _published_post(post_id):
@@ -103,13 +135,17 @@ def browse_all_entries():
 @login_required
 def create_post():
     form = PostForm()
+    form.music_track_id.choices = _music_choices(session['user_id'])
     if form.validate_on_submit():
         created_paths = []
         try:
             prepared = prepare_images(form.images.data or [])
+            music_track = _selected_music_track(
+                form.music_track_id.data, session['user_id'])
             post = Post(author_id=session['user_id'], title=form.title.data.strip(),
                         content=form.content.data.strip(), board='public',
-                        tags=_parse_tags(form.tags.data), status='published')
+                        tags=_parse_tags(form.tags.data), status='published',
+                        music_track_id=music_track.id if music_track else None)
             db.session.add(post)
             db.session.flush()
             created_paths = store_images(post, session['user_id'], prepared)
@@ -194,7 +230,8 @@ def view_post(post_id):
                            details=get_details(), comments=comments,
                            comment_form=comment_form,
                            delete_form=DeleteEntryForm(), liked=liked,
-                           is_admin=is_admin)
+                           is_admin=is_admin,
+                           music_post_id=post.id)
 
 
 @main.route('/timestamp/<timestamp>')
@@ -216,9 +253,10 @@ def edit_post(post_id):
     post = _published_post(post_id)
     if not post:
         abort(404)
-    if post.author_id != session['user_id']:
+    if not _can_manage_post(post):
         abort(403)
     form = PostForm()
+    form.music_track_id.choices = _music_choices(post.author_id)
     if form.validate_on_submit():
         selected_ids = {int(value) for value in
                         request.form.getlist('remove_image_ids')
@@ -236,6 +274,9 @@ def edit_post(post_id):
             post.content = form.content.data.strip()
             post.board = 'public'
             post.tags = _parse_tags(form.tags.data)
+            music_track = _selected_music_track(
+                form.music_track_id.data, post.author_id)
+            post.music_track_id = music_track.id if music_track else None
             post.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
             for item in remove_items:
                 media = item.media
@@ -260,6 +301,7 @@ def edit_post(post_id):
         form.title.data = post.title or ''
         form.content.data = post.content
         form.tags.data = ', '.join(post.tags or [])
+        form.music_track_id.data = post.music_track_id or 0
         form.submit.label.text = '保存修改'
     return render_template('post.html', form=form, post=post,
                            page_title='编辑博文', details=get_details())
@@ -284,7 +326,7 @@ def delete_post(post_id):
     post = _published_post(post_id)
     if not post:
         abort(404)
-    if post.author_id != session['user_id']:
+    if not _can_manage_post(post):
         abort(403)
     form = DeleteEntryForm()
     if not form.validate_on_submit():
@@ -398,6 +440,41 @@ def like_entry(timestamp):
     if not post:
         return jsonify({'error': 'not found'}), 404
     return like_post(post.id)
+
+
+@main.route('/api/post/<int:post_id>/comments', methods=['POST'])
+@login_required
+def api_add_comment(post_id):
+    post = _published_post(post_id)
+    if not post:
+        return jsonify({'error': '博文不存在。'}), 404
+    payload = request.get_json(silent=True) or {}
+    content = str(payload.get('content') or '').strip()
+    if not content:
+        return jsonify({'error': '评论内容不能为空。'}), 400
+    if len(content) > 500:
+        return jsonify({'error': '评论不能超过 500 个字符。'}), 400
+    comment = Comment(post_id=post.id, author_id=session['user_id'],
+                      content=content)
+    db.session.add(comment)
+    db.session.commit()
+    user = db.session.get(User, session['user_id'])
+    avatar = (user.profile.avatar if user.profile and user.profile.avatar
+              else 'images/default-avatar.jpg')
+    comment_count = db.session.scalar(
+        select(func.count(Comment.id)).where(
+            Comment.post_id == post.id, Comment.status == 'visible')) or 0
+    return jsonify({
+        'comment': {
+            'id': comment.id,
+            'content': comment.content,
+            'nickname': user.display_name,
+            'profile_url': url_for('user.view_user_profile', user_id=user.id),
+            'avatar_url': url_for('static', filename=avatar),
+            'created_at': comment.created_at.strftime('%Y-%m-%d %H:%M')
+        },
+        'count': comment_count
+    }), 201
 
 
 @main.route('/comment/<int:comment_id>/delete', methods=['POST'])

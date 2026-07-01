@@ -1,9 +1,7 @@
 from datetime import datetime, timezone
 from urllib.parse import urlsplit
 
-from flask import (abort, current_app, flash, redirect, render_template,
-                   request, session, url_for)
-from itsdangerous import URLSafeTimedSerializer as Serializer
+from flask import flash, redirect, render_template, request, session, url_for
 
 from app.decorators import login_required
 from app.accounts import allocate_account
@@ -12,7 +10,7 @@ from app.extensions import db
 from app.models import Profile, User
 from . import auth, pwd_context
 from .forms import (ChangeAccountForm, ChangePasswordForm, LoginForm,
-                    RegistrationForm, ResetPasswordForm, SetNewPasswordForm)
+                    RegistrationForm, ResetPasswordForm)
 
 
 def _safe_next_url(target):
@@ -86,28 +84,6 @@ def request_reset():
     return render_template('reset_password.html', form=form, details=details)
 
 
-@auth.route('/reset_password/<token>', methods=['GET', 'POST'])
-def confirm_password_reset(token):
-    details = get_details()
-    serializer = Serializer(current_app.config['SECRET_KEY'])
-    try:
-        data = serializer.loads(token, max_age=3600)
-    except Exception:
-        flash('密码重置链接无效或已过期。')
-        return redirect(url_for('auth.request_reset'))
-    user = db.session.get(User, data.get('confirm'))
-    if not user:
-        abort(404)
-    form = SetNewPasswordForm()
-    if form.validate_on_submit():
-        user.password_hash = pwd_context.hash(form.new_password.data)
-        db.session.commit()
-        flash('密码已更新，您现在可以登录了。')
-        return redirect(url_for('auth.login'))
-    return render_template('set_new_password.html', form=form, token=token,
-                           details=details)
-
-
 @auth.route('/change_account', methods=['GET', 'POST'])
 @login_required
 def change_account():
@@ -134,8 +110,3 @@ def change_password():
         flash('您的密码已更新。')
         return redirect(url_for('admin.view_admin'))
     return render_template('change_password.html', form=form, details=details)
-
-
-def generate_confirmation_token(user_id, expiration=3600):
-    serializer = Serializer(current_app.config['SECRET_KEY'])
-    return serializer.dumps({'confirm': user_id})

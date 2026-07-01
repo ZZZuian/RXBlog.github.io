@@ -22,10 +22,11 @@ from PIL import Image
 
 from app import app
 from app.extensions import db
-from app.migration import migrate_tinydb
+from app.migration import migrate_legacy_times_to_utc, migrate_tinydb
 from app.models import (Comment, Media, MigrationState, Post, PostImage,
                         PostLike, Profile, SiteSetting, User, UserMusicTrack)
 from app.netease import NeteaseMusicError, query_netease_song
+from app.time_utils import format_china_time
 
 
 class CommunityPlatformTest(unittest.TestCase):
@@ -112,7 +113,8 @@ class CommunityPlatformTest(unittest.TestCase):
             alice_post = Post.query.filter_by(author_id=alice.id).one()
             alice_post_id = alice_post.id
             alice_timestamp = alice_post.timestamp
-            alice_day = alice_post.created_at.strftime('%Y-%m-%d')
+            alice_day = format_china_time(
+                alice_post.created_at, '%Y-%m-%d')
             self.assertEqual(alice.role, 'admin')
             self.assertEqual(alice.status, 'active')
             self.assertEqual(bob.role, 'user')
@@ -181,6 +183,47 @@ class CommunityPlatformTest(unittest.TestCase):
         self.assertIn('Alice edited public post',
                       edit_response.get_data(as_text=True))
 
+    def test_password_reset_requires_original_password(self):
+        account, _ = self.register('Password Owner')
+        reset_page = self.client.get('/admin/reset_password').get_data(
+            as_text=True)
+        self.assertIn('name="original_password"', reset_page)
+
+        wrong = self.client.post('/admin/reset_password', data={
+            'account': account,
+            'original_password': 'Wrong1!',
+            'new_password': 'Changed2!',
+            'verify_password': 'Changed2!',
+            'submit': '重置密码'
+        }, follow_redirects=True)
+        self.assertIn('账号或密码错误', wrong.get_data(as_text=True))
+
+        old_login = self.client.post('/admin/login', data={
+            'account': account, 'password': 'Secret1!', 'submit': '登录'
+        }, follow_redirects=False)
+        self.assertEqual(old_login.status_code, 302)
+        self.client.get('/admin/logout')
+
+        changed = self.client.post('/admin/reset_password', data={
+            'account': account,
+            'original_password': 'Secret1!',
+            'new_password': 'Changed2!',
+            'verify_password': 'Changed2!',
+            'submit': '重置密码'
+        }, follow_redirects=True)
+        self.assertIn('密码已重置成功', changed.get_data(as_text=True))
+
+        rejected_old = self.client.post('/admin/login', data={
+            'account': account, 'password': 'Secret1!', 'submit': '登录'
+        }, follow_redirects=False)
+        self.assertEqual(rejected_old.status_code, 200)
+        accepted_new = self.client.post('/admin/login', data={
+            'account': account, 'password': 'Changed2!', 'submit': '登录'
+        }, follow_redirects=False)
+        self.assertEqual(accepted_new.status_code, 302)
+        self.assertEqual(self.client.get(
+            '/admin/reset_password/not-a-token').status_code, 404)
+
     def test_entertainment_categories_and_tag_aliases(self):
         account, _ = self.register('Category Author')
         self.login(account)
@@ -199,6 +242,9 @@ class CommunityPlatformTest(unittest.TestCase):
             user_id = author.id
             self.assertEqual(post.category, 'game')
             self.assertEqual(post.tags, ['游戏', '摄影', 'Vtuber'])
+            default_cover = post.cover_image
+            self.assertTrue(default_cover.startswith('images/post-covers/'))
+            self.assertEqual(default_cover, post.cover_image)
 
         profile = self.client.get('/user/{}'.format(user_id)).get_data(
             as_text=True)
@@ -206,6 +252,7 @@ class CommunityPlatformTest(unittest.TestCase):
         self.assertIn('不分区浏览所有板块帖子', profile)
         self.assertIn('光影相册', profile)
         self.assertIn('#游戏', profile)
+        self.assertIn(default_cover, profile)
         profile_rail = profile.split('class="profile-rail"', 1)[1].split(
             '</aside>', 1)[0]
         self.assertIn('profile-guestbook', profile_rail)
@@ -301,6 +348,8 @@ class CommunityPlatformTest(unittest.TestCase):
         with app.app_context():
             self.assertTrue(migrate_tinydb(legacy_path))
             self.assertFalse(migrate_tinydb(legacy_path))
+            self.assertTrue(migrate_legacy_times_to_utc(legacy_path))
+            self.assertFalse(migrate_legacy_times_to_utc(legacy_path))
             self.assertEqual(User.query.count(), 1)
             self.assertEqual(Post.query.count(), 1)
             self.assertEqual(Comment.query.count(), 1)
@@ -311,6 +360,37 @@ class CommunityPlatformTest(unittest.TestCase):
             self.assertEqual(post.content, 'Migrated post')
             self.assertEqual(post.legacy_likes, 2)
             self.assertEqual(post.board, 'public')
+            self.assertEqual(post.created_at, datetime(2026, 6, 29, 2, 0))
+            self.assertEqual(format_china_time(post.created_at),
+                             '2026-06-29 10:00')
+            self.assertEqual(db.session.get(Comment, 3).created_at,
+                             datetime(2026, 6, 29, 2, 1))
+
+        legacy_link = self.client.get(
+            '/timestamp/2026-06-29 10:00:00', follow_redirects=False)
+        self.assertEqual(legacy_link.status_code, 301)
+        self.assertTrue(legacy_link.headers['Location'].endswith('/post/12'))
+
+    def test_utc_times_render_as_china_time_and_local_day(self):
+        account, _ = self.register('Timezone Author')
+        with app.app_context():
+            author = User.query.filter_by(username=account).one()
+            post = Post(author_id=author.id, title='跨日测试', content='正文',
+                        category='daily', status='published',
+                        created_at=datetime(2026, 7, 1, 18, 30),
+                        updated_at=datetime(2026, 7, 1, 18, 30))
+            db.session.add(post)
+            db.session.commit()
+            post_id = post.id
+
+        home = self.client.get('/').get_data(as_text=True)
+        self.assertIn('2026-07-02 02:30', home)
+        detail = self.client.get('/post/{}'.format(post_id)).get_data(
+            as_text=True)
+        self.assertIn('2026-07-02 02:30', detail)
+        local_day = self.client.get('/day/2026-07-02').get_data(as_text=True)
+        self.assertIn('跨日测试', local_day)
+        self.assertEqual(self.client.get('/day/2026-07-01').status_code, 404)
 
     def test_structured_post_images_edit_cleanup_and_validation(self):
         alice_account, _ = self.register('Alice')

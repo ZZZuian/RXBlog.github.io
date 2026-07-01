@@ -1,7 +1,7 @@
 import json
 import os
 import shutil
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from sqlalchemy import inspect, text
 
@@ -17,6 +17,7 @@ SINGLE_COMMUNITY_MIGRATION = 'collapse_boards_to_single_community_v1'
 SINGLE_FILE_PATH_MIGRATION = 'single_file_static_paths_v1'
 DEACTIVATED_IDENTITY_MIGRATION = 'release_deactivated_identities_v1'
 POST_TAXONOMY_MIGRATION = 'entertainment_post_taxonomy_v1'
+LEGACY_TIMEZONE_MIGRATION = 'legacy_china_times_to_utc_v1'
 
 
 def migrate_music_sources_schema():
@@ -217,6 +218,36 @@ def migrate_tinydb(legacy_path=None):
         ))
 
     db.session.add(MigrationState(name=MIGRATION_NAME))
+    db.session.commit()
+    return True
+
+
+def migrate_legacy_times_to_utc(legacy_path=None):
+    """Normalize TinyDB's China-local naive times to UTC-naive storage."""
+    if db.session.get(MigrationState, LEGACY_TIMEZONE_MIGRATION):
+        return False
+
+    path = Path(legacy_path or os.environ.get('CHRONOFLASK_DB_PATH', 'db.json'))
+    if not path.is_absolute():
+        path = Path.cwd() / path
+    if path.exists():
+        with path.open('r', encoding='utf-8') as source:
+            data = json.load(source)
+        offset = timedelta(hours=8)
+        for key, row in _table(data, 'entries').items():
+            post = db.session.get(Post, int(key))
+            local_time = _parse_time(row.get('timestamp'))
+            if post and local_time and post.created_at == local_time:
+                post.created_at = local_time - offset
+                if post.updated_at == local_time:
+                    post.updated_at = local_time - offset
+        for key, row in _table(data, 'comments').items():
+            comment = db.session.get(Comment, int(key))
+            local_time = _parse_time(row.get('created_at'))
+            if comment and local_time and comment.created_at == local_time:
+                comment.created_at = local_time - offset
+
+    db.session.add(MigrationState(name=LEGACY_TIMEZONE_MIGRATION))
     db.session.commit()
     return True
 

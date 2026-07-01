@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from flask import (abort, flash, jsonify, redirect, render_template, request,
                    session, url_for)
@@ -10,6 +10,7 @@ from app.extensions import db
 from app.models import Comment, Post, PostLike, User, UserMusicTrack
 from app.parse import parse_input
 from app.taxonomy import category_meta, normalize_tags
+from app.time_utils import format_china_time
 from app.uploads import (UploadValidationError, cleanup_paths,
                          media_absolute_path, prepare_images, store_images)
 from . import main
@@ -104,9 +105,20 @@ def _published_post(post_id):
 
 
 def _post_by_timestamp(timestamp):
-    return db.session.scalar(
+    post = db.session.scalar(
         select(Post).where(
             func.strftime('%Y-%m-%d %H:%M:%S', Post.created_at) == timestamp,
+            Post.status == 'published'
+        ).order_by(Post.id)
+    )
+    if post:
+        return post
+    # TinyDB links used China-local naive timestamps before UTC normalization.
+    legacy_utc = datetime.strptime(
+        timestamp, '%Y-%m-%d %H:%M:%S') - timedelta(hours=8)
+    return db.session.scalar(
+        select(Post).where(
+            Post.created_at == legacy_utc,
             Post.status == 'published'
         ).order_by(Post.id)
     )
@@ -209,7 +221,8 @@ def view_entries_for_page(page):
 def view_entries_for_day(day):
     posts = db.session.scalars(
         select(Post).where(Post.status == 'published',
-                           func.date(Post.created_at) == day)
+                           func.date(func.datetime(
+                               Post.created_at, '+8 hours')) == day)
         .order_by(Post.created_at.asc(), Post.id.asc())
     ).all()
     if not posts:
@@ -452,8 +465,10 @@ def view_all_tags():
 @main.route('/days')
 def view_all_days():
     days = db.session.scalars(
-        select(func.date(Post.created_at)).where(Post.status == 'published')
-        .distinct().order_by(func.date(Post.created_at).desc())
+        select(func.date(func.datetime(Post.created_at, '+8 hours')))
+        .where(Post.status == 'published').distinct()
+        .order_by(func.date(func.datetime(
+            Post.created_at, '+8 hours')).desc())
     ).all()
     return render_template('days.html', all_days=days, details=get_details())
 
@@ -535,7 +550,7 @@ def api_add_comment(post_id):
             'nickname': user.display_name,
             'profile_url': url_for('user.view_user_profile', user_id=user.id),
             'avatar_url': url_for('static', filename=avatar),
-            'created_at': comment.created_at.strftime('%Y-%m-%d %H:%M')
+            'created_at': format_china_time(comment.created_at)
         },
         'count': comment_count
     }), 201

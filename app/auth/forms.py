@@ -124,18 +124,11 @@ class DeactivateAccountForm(Form):
 class ResetPasswordForm(Form):
     account = StringField('您注册时使用的账号：', filters=[normalize_account],
         validators=[DataRequired(), Length(min=3, max=254), account_exists])
+    original_password = PasswordField('原密码：', validators=[
+        DataRequired(), PasswordCorrect('account')])
     new_password = PasswordField('新密码：（最少6位，须包含数字和特殊字符）',
         validators=[DataRequired(), Length(min=6), EqualTo('verify_password',
         message='两次输入的新密码不一致。'), has_digits, has_special_char])
     verify_password = PasswordField('再次输入新密码：',
         validators=[DataRequired(), Length(min=6)])
     submit = SubmitField('重置密码')
-
-
-class SetNewPasswordForm(Form):
-    new_password = PasswordField('新密码：（最少6位，须包含数字和特殊字符）',
-        validators=[DataRequired(), Length(min=6), EqualTo('verify_password',
-        message='两次输入的新密码不一致。'), has_digits, has_special_char])
-    verify_password = PasswordField('再次输入新密码：',
-        validators=[DataRequired(), Length(min=6)])
-    submit = SubmitField('设置新密码')

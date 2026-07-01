@@ -1,8 +1,14 @@
 from datetime import datetime, timezone
+import random
 
 from .extensions import db
 
 DEFAULT_AVATAR_PATH = 'images/default-avatar.jpg'
+DEFAULT_POST_COVERS = (
+    'images/post-covers/default-1.png',
+    'images/post-covers/default-2.png',
+    'images/post-covers/default-3.png',
+)
 
 
 def utcnow():
@@ -101,6 +107,13 @@ class Post(db.Model):
         stored = [item.media.file_path for item in self.image_items
                   if item.media]
         return stored + list(self.images or [])
+
+    @property
+    def cover_image(self):
+        images = self.display_images
+        if images:
+            return images[0]
+        return random.Random(self.id or 0).choice(DEFAULT_POST_COVERS)
 
     @property
     def excerpt(self):

@@ -30,6 +30,7 @@ bootstrap = Bootstrap(app)
 with app.app_context():
     from .migration import (migrate_single_community,
                             migrate_deactivated_identities,
+                            migrate_legacy_times_to_utc,
                             migrate_music_sources_schema,
                             migrate_post_music_schema,
                             migrate_post_pin_schema,
@@ -40,6 +41,7 @@ with app.app_context():
     migrate_post_music_schema()
     migrate_post_pin_schema()
     migrate_tinydb()
+    migrate_legacy_times_to_utc()
     migrate_post_taxonomy_schema()
     migrate_single_community()
     migrate_single_file_static_paths()
@@ -56,3 +58,6 @@ app.register_blueprint(main, url_prefix='/')
 app.register_blueprint(user, url_prefix='/')
 
 from app.main import errors
+
+from .time_utils import format_china_time
+app.jinja_env.filters['localtime'] = format_china_time

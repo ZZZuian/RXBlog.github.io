@@ -59,6 +59,8 @@ class Post(db.Model):
     title = db.Column(db.String(200), nullable=False, default='')
     content = db.Column(db.Text, nullable=False)
     board = db.Column(db.String(20), nullable=False, default='public', index=True)
+    category = db.Column(db.String(20), nullable=False, default='daily', index=True)
+    is_pinned = db.Column(db.Boolean, nullable=False, default=False, index=True)
     tags = db.Column(db.JSON, nullable=False, default=list)
     images = db.Column(db.JSON, nullable=False, default=list)
     status = db.Column(db.String(20), nullable=False, default='published', index=True)

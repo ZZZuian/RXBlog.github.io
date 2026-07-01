@@ -181,6 +181,102 @@ class CommunityPlatformTest(unittest.TestCase):
         self.assertIn('Alice edited public post',
                       edit_response.get_data(as_text=True))
 
+    def test_entertainment_categories_and_tag_aliases(self):
+        account, _ = self.register('Category Author')
+        self.login(account)
+        response = self.client.post('/post/new', data={
+            'title': '兴趣归档',
+            'content': '娱乐向分类测试',
+            'category': 'game',
+            'tags': '原神, 独立游戏, 现场摄影, Vtuber',
+            'submit': '发布博文'
+        }, follow_redirects=True)
+        self.assertEqual(response.status_code, 200)
+
+        with app.app_context():
+            author = User.query.filter_by(username=account).one()
+            post = Post.query.filter_by(author_id=author.id).one()
+            user_id = author.id
+            self.assertEqual(post.category, 'game')
+            self.assertEqual(post.tags, ['游戏', '摄影', 'Vtuber'])
+
+        profile = self.client.get('/user/{}'.format(user_id)).get_data(
+            as_text=True)
+        self.assertIn('兴趣分区', profile)
+        self.assertIn('不分区浏览所有板块帖子', profile)
+        self.assertIn('光影相册', profile)
+        self.assertIn('#游戏', profile)
+        profile_rail = profile.split('class="profile-rail"', 1)[1].split(
+            '</aside>', 1)[0]
+        self.assertIn('profile-guestbook', profile_rail)
+        filtered = self.client.get(
+            '/user/{}?category=game'.format(user_id)).get_data(as_text=True)
+        self.assertIn('兴趣归档', filtered)
+        empty = self.client.get(
+            '/user/{}?category=live'.format(user_id)).get_data(as_text=True)
+        self.assertNotIn('兴趣归档', empty)
+
+    def test_profile_pin_is_unique_and_photo_wall_is_category_scoped(self):
+        account, _ = self.register('Pinned Author')
+        self.login(account)
+        game_response = self.client.post('/post/new', data={
+            'title': '置顶游戏记录', 'content': '带图但不属于相册',
+            'category': 'game', 'tags': '游戏',
+            'images': [self.image_file('game.png', color='red')],
+            'submit': '发布博文'
+        }, content_type='multipart/form-data', follow_redirects=True)
+        self.assertEqual(game_response.status_code, 200)
+        photo_response = self.client.post('/post/new', data={
+            'title': '相册照片', 'content': '只允许这张进入照片墙',
+            'category': 'photo', 'tags': '摄影',
+            'images': [self.image_file('photo.png', color='blue')],
+            'submit': '发布博文'
+        }, content_type='multipart/form-data', follow_redirects=True)
+        self.assertEqual(photo_response.status_code, 200)
+
+        with app.app_context():
+            author = User.query.filter_by(username=account).one()
+            game = Post.query.filter_by(title='置顶游戏记录').one()
+            photo = Post.query.filter_by(title='相册照片').one()
+            user_id = author.id
+            game_id = game.id
+            game_path = game.display_images[0]
+            photo_path = photo.display_images[0]
+            self.assertFalse(game.is_pinned)
+            self.assertFalse(photo.is_pinned)
+
+        pin_response = self.client.post(
+            '/post/{}/pin'.format(game_id), follow_redirects=True)
+        self.assertEqual(pin_response.status_code, 200)
+        pin_page = pin_response.get_data(as_text=True)
+        self.assertLess(pin_page.index('编辑记录'), pin_page.index('取消置顶'))
+        with app.app_context():
+            self.assertTrue(db.session.get(Post, game_id).is_pinned)
+
+        profile = self.client.get('/user/{}'.format(user_id)).get_data(
+            as_text=True)
+        self.assertIn('置顶博文', profile)
+        wall = profile.split('class="profile-photo-wall"', 1)[1].split(
+            'class="side-card-link"', 1)[0]
+        self.assertIn(photo_path, wall)
+        self.assertNotIn(game_path, wall)
+
+        replacement = self.client.post('/post/new', data={
+            'title': '新的置顶', 'content': '替换此前置顶',
+            'category': 'daily', 'tags': '',
+            'submit': '发布博文'
+        }, follow_redirects=True)
+        self.assertEqual(replacement.status_code, 200)
+        with app.app_context():
+            replacement_id = Post.query.filter_by(title='新的置顶').one().id
+
+        replacement_pin = self.client.post(
+            '/post/{}/pin'.format(replacement_id), follow_redirects=True)
+        self.assertEqual(replacement_pin.status_code, 200)
+        with app.app_context():
+            self.assertFalse(db.session.get(Post, game_id).is_pinned)
+            self.assertTrue(Post.query.filter_by(title='新的置顶').one().is_pinned)
+
     def test_legacy_tinydb_migration_is_idempotent(self):
         legacy_path = _root / 'legacy-fixture.json'
         legacy_data = {
@@ -230,6 +326,10 @@ class CommunityPlatformTest(unittest.TestCase):
         }, content_type='multipart/form-data', follow_redirects=True)
         self.assertEqual(response.status_code, 200)
         page = response.get_data(as_text=True)
+        self.assertIn('article-detail-layout', page)
+        self.assertIn('article-author-card', page)
+        self.assertIn('article-info-card', page)
+        self.assertIn('article-cover', page)
         self.assertIn('Image post', page)
         self.assertNotIn('发布板块', page)
         self.assertIn('post-gallery', page)

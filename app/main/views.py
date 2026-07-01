@@ -9,10 +9,12 @@ from app.details import get_details
 from app.extensions import db
 from app.models import Comment, Post, PostLike, User, UserMusicTrack
 from app.parse import parse_input
+from app.taxonomy import category_meta, normalize_tags
 from app.uploads import (UploadValidationError, cleanup_paths,
                          media_absolute_path, prepare_images, store_images)
 from . import main
-from .forms import (CommentForm, DeleteEntryForm, PostForm, RawEntryForm)
+from .forms import (CommentForm, DeleteEntryForm, PinPostForm, PostForm,
+                    RawEntryForm)
 
 
 PER_PAGE = 10
@@ -30,13 +32,18 @@ def inject_liked_post_ids():
     return {'liked_post_ids': set(post_ids)}
 
 
+@main.app_context_processor
+def inject_post_taxonomy():
+    return {'category_meta': category_meta}
+
+
 def _parse_tags(raw_tags):
     tags = []
     for value in (raw_tags or '').replace('，', ',').split(','):
         tag = value.strip()
         if tag and tag not in tags:
             tags.append(tag)
-    return tags[:10]
+    return normalize_tags(tags)
 
 
 def _add_image_error(form, message):
@@ -75,6 +82,20 @@ def _selected_music_track(track_id, owner_id):
     if not track or track.user_id != owner_id:
         abort(400)
     return track
+
+
+def _set_profile_pin(post, should_pin):
+    """Keep at most one published profile pin for each author."""
+    post.is_pinned = bool(should_pin)
+    if not should_pin:
+        return
+    statement = Post.query.filter(
+        Post.author_id == post.author_id,
+        Post.is_pinned.is_(True)
+    )
+    if post.id is not None:
+        statement = statement.filter(Post.id != post.id)
+    statement.update({Post.is_pinned: False}, synchronize_session=False)
 
 
 def _published_post(post_id):
@@ -144,6 +165,7 @@ def create_post():
                 form.music_track_id.data, session['user_id'])
             post = Post(author_id=session['user_id'], title=form.title.data.strip(),
                         content=form.content.data.strip(), board='public',
+                        category=form.category.data,
                         tags=_parse_tags(form.tags.data), status='published',
                         music_track_id=music_track.id if music_track else None)
             db.session.add(post)
@@ -220,6 +242,23 @@ def view_post(post_id):
     ).all()
     liked = bool(session.get('user_id') and db.session.get(
         PostLike, (session['user_id'], post.id)))
+
+    author_post_count = db.session.scalar(
+        select(func.count(Post.id)).where(
+            Post.author_id == post.author_id,
+            Post.status == 'published')) or 0
+    author_like_count = db.session.scalar(
+        select(func.count(PostLike.user_id)).join(
+            Post, Post.id == PostLike.post_id).where(
+            Post.author_id == post.author_id,
+            Post.status == 'published')) or 0
+    author_comment_count = db.session.scalar(
+        select(func.count(Comment.id)).join(
+            Post, Post.id == Comment.post_id).where(
+            Post.author_id == post.author_id,
+            Post.status == 'published',
+            Comment.status == 'visible')) or 0
+    reading_minutes = max(1, (len(post.content.strip()) + 399) // 400)
     
     is_admin = False
     if session.get('logged_in'):
@@ -229,8 +268,13 @@ def view_post(post_id):
     return render_template('entry.html', entry=post, post=post,
                            details=get_details(), comments=comments,
                            comment_form=comment_form,
-                           delete_form=DeleteEntryForm(), liked=liked,
+                           delete_form=DeleteEntryForm(),
+                           pin_form=PinPostForm(), liked=liked,
                            is_admin=is_admin,
+                           author_post_count=author_post_count,
+                           author_like_count=author_like_count,
+                           author_comment_count=author_comment_count,
+                           reading_minutes=reading_minutes,
                            music_post_id=post.id)
 
 
@@ -273,6 +317,7 @@ def edit_post(post_id):
             post.title = form.title.data.strip()
             post.content = form.content.data.strip()
             post.board = 'public'
+            post.category = form.category.data
             post.tags = _parse_tags(form.tags.data)
             music_track = _selected_music_track(
                 form.music_track_id.data, post.author_id)
@@ -300,6 +345,7 @@ def edit_post(post_id):
     if request.method == 'GET':
         form.title.data = post.title or ''
         form.content.data = post.content
+        form.category.data = post.category
         form.tags.data = ', '.join(post.tags or [])
         form.music_track_id.data = post.music_track_id or 0
         form.submit.label.text = '保存修改'
@@ -318,6 +364,24 @@ def edit_entry(timestamp):
     if not post:
         abort(404)
     return redirect(url_for('main.edit_post', post_id=post.id), code=301)
+
+
+@main.route('/post/<int:post_id>/pin', methods=['POST'])
+@login_required
+def toggle_post_pin(post_id):
+    post = _published_post(post_id)
+    if not post:
+        abort(404)
+    if not _can_manage_post(post):
+        abort(403)
+    form = PinPostForm()
+    if not form.validate_on_submit():
+        abort(400)
+    was_pinned = post.is_pinned
+    _set_profile_pin(post, not was_pinned)
+    db.session.commit()
+    flash('已取消主页置顶。' if was_pinned else '已置顶到个人主页。')
+    return redirect(url_for('main.view_post', post_id=post.id))
 
 
 @main.route('/post/<int:post_id>/delete', methods=['POST'])

@@ -1,85 +1,119 @@
 {% extends "base.html" %}
+{% block content_panel_class %}article-page-panel{% endblock %}
 {% block page_content %}
-<div class="page-header"><h1>{{ post.title or post.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</h1></div>
+{% set entry_category = category_meta(post.category) %}
 
-<div class="entry-detail">
-    <p>作者：{% if post.author.status == 'active' %}<a href="{{ url_for('user.view_user_profile', user_id=post.author_id) }}">{{ post.author.display_name }}</a>{% else %}<span class="deactivated-user">{{ post.author.display_name }}</span>{% endif %}</p>
-    <p>发布于 {{ post.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</p>
-    <p>内容：{{ post.content }}</p>
-    <p>标签：{% for tag in post.tags or [] %}<a href="{{ url_for('main.view_entries_for_tag', tag=tag) }}">#{{ tag }}</a> {% else %}无{% endfor %}</p>
-    {% if post.display_images %}
-    <div class="post-gallery">
-        {% for image_path in post.display_images %}
-        <button class="gallery-thumb" type="button" data-full="{{ url_for('static', filename=image_path) }}">
-            <img src="{{ url_for('static', filename=image_path) }}" alt="{{ post.title or '博文图片' }} {{ loop.index }}" loading="lazy">
+<div class="article-detail-layout">
+    <article class="article-reader-card">
+        {% if post.display_images %}
+        <button class="article-cover gallery-thumb" type="button" data-full="{{ url_for('static', filename=post.display_images[0]) }}">
+            <img src="{{ url_for('static', filename=post.display_images[0]) }}" alt="{{ post.title or '博文封面' }}">
         </button>
-        {% endfor %}
-    </div>
-    <div id="imageLightbox" class="image-lightbox" hidden>
-        <button type="button" class="lightbox-close" aria-label="关闭">×</button>
-        <img src="" alt="放大的博文图片">
-    </div>
-    {% endif %}
-    {% if session.logged_in %}
-    <button class="like-btn js-post-like{% if liked %} liked{% endif %}" type="button" data-like-url="{{ url_for('main.like_post', post_id=post.id) }}" data-liked="{{ 'true' if liked else 'false' }}" aria-pressed="{{ 'true' if liked else 'false' }}" aria-label="{{ '取消点赞' if liked else '点赞' }}"><span class="like-glyph">{% if liked %}♥{% else %}♡{% endif %}</span> <span class="like-count">{{ post.likes_count }}</span></button>
-    {% else %}<span>♡ {{ post.likes_count }}</span>{% endif %}
+        {% endif %}
 
-    {% if session.user_id == post.author_id or is_admin %}
-    <a class="btn btn-default" href="{{ url_for('main.edit_post', post_id=post.id) }}">编辑记录</a>
-    <form method="post" action="{{ url_for('main.delete_post', post_id=post.id) }}" class="entry-delete-form" onsubmit="return confirm('确定删除这条记录吗？');">
-        {{ delete_form.hidden_tag() }}
-        {{ delete_form.submit(class_='btn btn-danger') }}
-    </form>
-    {% endif %}
-</div>
-
-<div class="comment-section">
-    <h3 id="commentCount" data-count="{{ comments|length }}">评论 ({{ comments|length }})</h3>
-    <div class="comment-list" id="commentList">
-    {% for comment in comments %}
-    <div class="comment-item" id="comment-{{ comment.id }}">
-        <div class="comment-header">
-            <div class="comment-avatar-container">
-                {% if comment.author and comment.author.status == 'active' and comment.author.profile and comment.author.profile.avatar %}
-                <img src="{{ url_for('static', filename=comment.author.profile.avatar) }}" alt="{{ comment.nickname }}" class="comment-avatar">
-                {% else %}
-                <img src="{{ url_for('static', filename='images/default-avatar.jpg') }}" alt="默认头像" class="comment-avatar">
-                {% endif %}
-            </div>
-            <div class="comment-meta">
-                {% if comment.author and comment.author.status == 'active' %}
-                <a href="{{ url_for('user.view_user_profile', user_id=comment.author_id) }}" class="comment-author-link comment-nickname">{{ comment.nickname }}</a>
-                {% else %}
-                <span class="comment-nickname{% if comment.author %} deactivated-user{% endif %}">{{ comment.nickname }}</span>
-                {% endif %}
-                <span class="comment-time">{{ comment.created_at.strftime('%Y-%m-%d %H:%M') }}</span>
-            </div>
-            {% if session.user_id == comment.author_id or is_admin %}
-            <form method="post" action="{{ url_for('main.delete_comment', comment_id=comment.id) }}" class="comment-delete-form">
-                {{ delete_form.hidden_tag() }}
-                <button type="submit" class="comment-delete-btn" title="删除评论" onclick="return confirm('确定删除这条评论吗？');">×</button>
-            </form>
+        <div class="article-reader-inner">
+            {% if post.author.status == 'active' %}
+            <a class="article-back-link" href="{{ url_for('user.view_user_profile', user_id=post.author_id) }}">← 返回个人主页</a>
+            {% else %}
+            <a class="article-back-link" href="{{ url_for('main.browse_all_entries') }}">← 返回社区首页</a>
             {% endif %}
-        </div>
-        <div class="comment-body">{{ comment.content }}</div>
-    </div>
-    {% endfor %}
-    </div>
-    {% if session.logged_in %}
-    <div class="comment-form">
-        <form class="js-comment-form" method="post" action="{{ url_for('main.view_post', post_id=post.id) }}" data-api-url="{{ url_for('main.api_add_comment', post_id=post.id) }}">
-            {{ comment_form.hidden_tag() }}
-            <div class="form-group">
-                {{ comment_form.content.label }}
-                {{ comment_form.content(class_='form-control', rows=3, maxlength=500, placeholder='写下你的评论……') }}
-            </div>
-            {{ comment_form.submit(class_='btn btn-primary') }}
-            <span class="comment-submit-status" aria-live="polite"></span>
-        </form>
-    </div>
-    {% else %}
-    <p class="login-hint"><a href="{{ url_for('auth.login', next=request.url) }}">登录</a>后参与评论。</p>
-    {% endif %}
-</div>
 
+            <header class="article-heading">
+                <h1>{{ post.title or post.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</h1>
+                <div class="article-heading-row">
+                    <div class="article-meta-chips">
+                        <span class="article-meta-chip">◉ {{ post.author.display_name }}</span>
+                        <time class="article-meta-chip" datetime="{{ post.created_at.isoformat() }}">◷ {{ post.created_at.strftime('%Y-%m-%d %H:%M') }}</time>
+                        <a class="article-meta-chip category" href="{{ url_for('user.view_user_profile', user_id=post.author_id, category=post.category) }}">{{ entry_category.icon }} {{ entry_category.label }}</a>
+                        {% for tag in post.tags or [] %}<a class="article-meta-chip tag" href="{{ url_for('main.view_entries_for_tag', tag=tag) }}">#{{ tag }}</a>{% endfor %}
+                    </div>
+                    <div class="article-actions">
+                        {% if session.logged_in %}
+                        <button class="btn article-action-btn js-post-like{% if liked %} liked{% endif %}" type="button" data-like-url="{{ url_for('main.like_post', post_id=post.id) }}" data-liked="{{ 'true' if liked else 'false' }}" aria-pressed="{{ 'true' if liked else 'false' }}" aria-label="{{ '取消点赞' if liked else '点赞' }}"><span class="like-glyph">{% if liked %}♥{% else %}♡{% endif %}</span> <span class="like-count">{{ post.likes_count }}</span></button>
+                        {% else %}<span class="btn article-action-btn">♡ {{ post.likes_count }}</span>{% endif %}
+
+                        {% if session.user_id == post.author_id or is_admin %}
+                        <a class="btn article-action-btn" href="{{ url_for('main.edit_post', post_id=post.id) }}">编辑记录</a>
+                        <form method="post" action="{{ url_for('main.toggle_post_pin', post_id=post.id) }}" class="entry-pin-form">
+                            {{ pin_form.hidden_tag() }}
+                            <button type="submit" class="btn article-action-btn">{{ '取消置顶' if post.is_pinned else '置顶主页' }}</button>
+                        </form>
+                        <form method="post" action="{{ url_for('main.delete_post', post_id=post.id) }}" class="entry-delete-form" onsubmit="return confirm('确定删除这条记录吗？');">
+                            {{ delete_form.hidden_tag() }}
+                            <button type="submit" class="btn article-action-btn article-delete-btn">删除</button>
+                        </form>
+                        {% endif %}
+                    </div>
+                </div>
+            </header>
+
+            <div class="article-body">{{ post.content }}</div>
+
+            {% if post.display_images|length > 1 %}
+            <div class="post-gallery article-inline-gallery">
+                {% for image_path in post.display_images[1:] %}
+                <button class="gallery-thumb" type="button" data-full="{{ url_for('static', filename=image_path) }}">
+                    <img src="{{ url_for('static', filename=image_path) }}" alt="{{ post.title or '博文图片' }} {{ loop.index + 1 }}" loading="lazy">
+                </button>
+                {% endfor %}
+            </div>
+            {% endif %}
+
+            {% if post.display_images %}
+            <div id="imageLightbox" class="image-lightbox" hidden>
+                <button type="button" class="lightbox-close" aria-label="关闭">×</button>
+                <img src="" alt="放大的博文图片">
+            </div>
+            {% endif %}
+
+            <section class="comment-section article-comments">
+                <h3 id="commentCount" data-count="{{ comments|length }}">评论 {{ comments|length }}</h3>
+                <div class="comment-list" id="commentList">
+                {% for comment in comments %}
+                <div class="comment-item" id="comment-{{ comment.id }}">
+                    <div class="comment-header">
+                        <div class="comment-avatar-container">
+                            <img src="{{ url_for('static', filename=comment.author.profile.avatar if comment.author and comment.author.status == 'active' and comment.author.profile and comment.author.profile.avatar else 'images/default-avatar.jpg') }}" alt="{{ comment.nickname }}" class="comment-avatar">
+                        </div>
+                        <div class="comment-meta">
+                            {% if comment.author and comment.author.status == 'active' %}<a href="{{ url_for('user.view_user_profile', user_id=comment.author_id) }}" class="comment-author-link comment-nickname">{{ comment.nickname }}</a>{% else %}<span class="comment-nickname{% if comment.author %} deactivated-user{% endif %}">{{ comment.nickname }}</span>{% endif %}
+                            <span class="comment-time">{{ comment.created_at.strftime('%Y-%m-%d %H:%M') }}</span>
+                        </div>
+                        {% if session.user_id == comment.author_id or is_admin %}<form method="post" action="{{ url_for('main.delete_comment', comment_id=comment.id) }}" class="comment-delete-form">{{ delete_form.hidden_tag() }}<button type="submit" class="comment-delete-btn" title="删除评论" onclick="return confirm('确定删除这条评论吗？');">×</button></form>{% endif %}
+                    </div>
+                    <div class="comment-body">{{ comment.content }}</div>
+                </div>
+                {% endfor %}
+                </div>
+                {% if session.logged_in %}
+                <div class="comment-form"><form class="js-comment-form" method="post" action="{{ url_for('main.view_post', post_id=post.id) }}" data-api-url="{{ url_for('main.api_add_comment', post_id=post.id) }}">{{ comment_form.hidden_tag() }}<div class="form-group">{{ comment_form.content(class_='form-control', rows=3, maxlength=500, placeholder='写下你的评论……') }}</div>{{ comment_form.submit(class_='btn btn-primary') }}<span class="comment-submit-status" aria-live="polite"></span></form></div>
+                {% else %}<p class="login-hint"><a href="{{ url_for('auth.login', next=request.url) }}">登录</a>后参与评论。</p>{% endif %}
+            </section>
+        </div>
+    </article>
+
+    <aside class="article-side-rail">
+        <section class="article-author-card">
+            <img class="article-author-avatar" src="{{ url_for('static', filename=post.author.profile.avatar if post.author.profile and post.author.profile.avatar else 'images/default-avatar.jpg') }}" alt="{{ post.author.display_name }}">
+            <h2>{{ post.author.display_name }}</h2>
+            <p>{{ post.author.profile.bio if post.author.profile and post.author.profile.bio else '记录游戏、现场、推与生活碎片' }}</p>
+            <div class="article-author-stats">
+                <span><strong>{{ author_post_count }}</strong><small>文章</small></span>
+                <span><strong>{{ author_like_count }}</strong><small>获赞</small></span>
+                <span><strong>{{ author_comment_count }}</strong><small>评论</small></span>
+            </div>
+            {% if post.author.status == 'active' %}<a class="btn btn-primary article-profile-link" href="{{ url_for('user.view_user_profile', user_id=post.author_id) }}">查看个人主页</a>{% endif %}
+        </section>
+
+        <section class="article-info-card">
+            <span class="section-eyebrow">ARTICLE INFO</span>
+            <h2>文章信息</h2>
+            <dl>
+                <div><dt>分区</dt><dd>{{ entry_category.label }}</dd></div>
+                <div><dt>阅读时间</dt><dd>约 {{ reading_minutes }} 分钟</dd></div>
+                <div><dt>图片</dt><dd>{{ post.display_images|length }} 张</dd></div>
+            </dl>
+        </section>
+    </aside>
+</div>
 {% endblock %}

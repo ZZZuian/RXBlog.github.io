@@ -9,12 +9,14 @@ from .extensions import db
 from .accounts import release_account
 from .models import (Comment, Media, MigrationState, Post, Profile, SiteSetting,
                      User, UserMusicTrack, utcnow)
+from .taxonomy import infer_category, normalize_tags
 
 
 MIGRATION_NAME = 'tinydb_to_sqlite_v1'
 SINGLE_COMMUNITY_MIGRATION = 'collapse_boards_to_single_community_v1'
 SINGLE_FILE_PATH_MIGRATION = 'single_file_static_paths_v1'
 DEACTIVATED_IDENTITY_MIGRATION = 'release_deactivated_identities_v1'
+POST_TAXONOMY_MIGRATION = 'entertainment_post_taxonomy_v1'
 
 
 def migrate_music_sources_schema():
@@ -50,6 +52,41 @@ def migrate_post_music_schema():
     db.session.execute(text(
         'CREATE INDEX IF NOT EXISTS ix_posts_music_track_id '
         'ON posts (music_track_id)'))
+    db.session.commit()
+    return True
+
+
+def migrate_post_taxonomy_schema():
+    """Add post categories and consolidate the renamed interest tags."""
+    columns = {column['name'] for column in inspect(db.engine).get_columns('posts')}
+    if 'category' not in columns:
+        db.session.execute(text(
+            "ALTER TABLE posts ADD COLUMN category VARCHAR(20) "
+            "NOT NULL DEFAULT 'daily'"))
+        db.session.execute(text(
+            'CREATE INDEX IF NOT EXISTS ix_posts_category ON posts (category)'))
+        db.session.commit()
+
+    if db.session.get(MigrationState, POST_TAXONOMY_MIGRATION):
+        return False
+    for post in Post.query.all():
+        original_tags = list(post.tags or [])
+        post.category = infer_category(original_tags)
+        post.tags = normalize_tags(original_tags)
+    db.session.add(MigrationState(name=POST_TAXONOMY_MIGRATION))
+    db.session.commit()
+    return True
+
+
+def migrate_post_pin_schema():
+    """Add the per-author profile pin flag to existing databases."""
+    columns = {column['name'] for column in inspect(db.engine).get_columns('posts')}
+    if 'is_pinned' in columns:
+        return False
+    db.session.execute(text(
+        'ALTER TABLE posts ADD COLUMN is_pinned BOOLEAN NOT NULL DEFAULT 0'))
+    db.session.execute(text(
+        'CREATE INDEX IF NOT EXISTS ix_posts_is_pinned ON posts (is_pinned)'))
     db.session.commit()
     return True
 

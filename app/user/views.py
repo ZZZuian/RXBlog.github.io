@@ -9,6 +9,7 @@ from app.extensions import db
 from app.models import (Comment, GuestbookMessage, Post, PostLike,
                         User, UserMusicTrack)
 from app.netease import NeteaseMusicError, query_netease_song
+from app.taxonomy import CATEGORIES, CATEGORY_META
 import os
 from pathlib import Path
 
@@ -27,13 +28,54 @@ def view_user_profile(user_id):
     if not profile:
         abort(404)
 
-    posts = db.session.scalars(
+    all_posts = db.session.scalars(
         select(Post).where(Post.author_id == user_id,
                            Post.status == 'published')
         .order_by(Post.created_at.desc(), Post.id.desc())
     ).all()
 
-    post_count = len(posts)
+    post_count = len(all_posts)
+
+    selected_category = request.args.get('category', '').strip()
+    if selected_category not in CATEGORY_META:
+        selected_category = ''
+    selected_tag = request.args.get('tag', '').strip()
+
+    category_counts = {slug: 0 for slug, _, _, _ in CATEGORIES}
+    tag_counts = {}
+    for post in all_posts:
+        if post.category in category_counts:
+            category_counts[post.category] += 1
+        for tag in post.tags or []:
+            tag_counts[tag] = tag_counts.get(tag, 0) + 1
+
+    posts = [post for post in all_posts
+             if (not selected_category or post.category == selected_category)
+             and (not selected_tag or selected_tag in (post.tags or []))]
+    category_cards = []
+    for slug, label, icon, description in CATEGORIES:
+        category_cards.append({
+            'slug': slug, 'label': label, 'icon': icon,
+            'description': description, 'count': category_counts[slug]
+        })
+    popular_tags = sorted(tag_counts.items(), key=lambda item: (-item[1], item[0]))[:14]
+
+    pinned_post = None
+    latest_posts = posts
+    if posts and not selected_category and not selected_tag:
+        pinned_post = next((post for post in posts if post.is_pinned), None)
+        if pinned_post:
+            latest_posts = [post for post in posts if post.id != pinned_post.id]
+
+    photo_items = []
+    photo_posts = [post for post in all_posts if post.category == 'photo']
+    for post in photo_posts:
+        for image_path in post.display_images:
+            photo_items.append({'post': post, 'path': image_path})
+            if len(photo_items) == 6:
+                break
+        if len(photo_items) == 6:
+            break
 
     like_count = db.session.scalar(
         select(func.count(PostLike.user_id))
@@ -62,8 +104,8 @@ def view_user_profile(user_id):
     ).all()
 
     comment_counts = {}
-    if posts:
-        post_ids = [p.id for p in posts]
+    if all_posts:
+        post_ids = [p.id for p in all_posts]
         rows = db.session.execute(
             select(Comment.post_id, func.count(Comment.id))
             .where(Comment.post_id.in_(post_ids), Comment.status == 'visible')
@@ -81,6 +123,13 @@ def view_user_profile(user_id):
                            profile_user=profile_user,
                            profile=profile,
                            posts=posts,
+                           latest_posts=latest_posts,
+                           pinned_post=pinned_post,
+                           category_cards=category_cards,
+                           popular_tags=popular_tags,
+                           photo_items=photo_items,
+                           selected_category=selected_category,
+                           selected_tag=selected_tag,
                            post_count=post_count,
                            like_count=like_count,
                            comment_count=comment_count,

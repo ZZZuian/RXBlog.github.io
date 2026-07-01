@@ -4,44 +4,25 @@
 
 <div class="user-profile">
     <section class="profile-hero profile-text-dark{% if profile.background_image %} has-custom-background{% endif %}"{% if profile.background_image %} style="background-image: url('{{ url_for('static', filename=profile.background_image) }}')" data-background-url="{{ url_for('static', filename=profile.background_image) }}"{% endif %}>
-        {% if profile.background_image %}
-        <div class="profile-bg-overlay"></div>
-        {% endif %}
-
+        {% if profile.background_image %}<div class="profile-bg-overlay"></div>{% endif %}
         <div class="profile-card">
             <div class="profile-header">
                 <div class="profile-avatar-wrapper">
-                    {% if profile.avatar %}
-                    <img src="{{ url_for('static', filename=profile.avatar) }}" alt="{{ profile.nickname }}" class="profile-avatar">
-                    {% else %}
-                    <img src="{{ url_for('static', filename='images/default-avatar.jpg') }}" alt="默认头像" class="profile-avatar">
-                    {% endif %}
+                    <img src="{{ url_for('static', filename=profile.avatar or 'images/default-avatar.jpg') }}" alt="{{ profile.nickname }}" class="profile-avatar">
                 </div>
                 <div class="profile-info">
+                    <span class="profile-kicker">PERSONAL INTEREST LOG</span>
                     <h1 class="profile-name">{{ profile.nickname }}</h1>
-                    {% if profile.bio %}
-                    <p class="profile-bio">{{ profile.bio }}</p>
-                    {% endif %}
+                    <p class="profile-bio">{{ profile.bio or '记录游戏、现场、推与生活碎片' }}</p>
                 </div>
             </div>
-
             <div class="profile-stats">
-                <div class="stat-item">
-                    <span class="stat-number">{{ post_count }}</span>
-                    <span class="stat-label">文章</span>
-                </div>
+                <div class="stat-item"><span class="stat-number">{{ post_count }}</span><span class="stat-label">文章</span></div>
                 <div class="stat-divider"></div>
-                <div class="stat-item">
-                    <span class="stat-number">{{ like_count }}</span>
-                    <span class="stat-label">获赞</span>
-                </div>
+                <div class="stat-item"><span class="stat-number">{{ like_count }}</span><span class="stat-label">获赞</span></div>
                 <div class="stat-divider"></div>
-                <div class="stat-item">
-                    <span class="stat-number">{{ comment_count }}</span>
-                    <span class="stat-label">评论</span>
-                </div>
+                <div class="stat-item"><span class="stat-number">{{ comment_count }}</span><span class="stat-label">评论</span></div>
             </div>
-
             {% if is_owner %}
             <div class="profile-actions">
                 <a href="{{ url_for('user.settings_profile') }}" class="btn btn-primary">编辑资料</a>
@@ -52,203 +33,103 @@
     </section>
 
     <div class="profile-content">
-        {% if false and music_tracks %}
-        <div class="music-card" id="musicCard">
-            <div class="music-card-header">
-                <span class="music-card-label">🎵 音乐</span>
+        <section class="profile-section profile-categories" aria-labelledby="categoryTitle">
+            <div class="profile-section-heading">
+                <div><span class="section-eyebrow">EXPLORE</span><h2 id="categoryTitle">兴趣分区</h2></div>
+                {% if selected_category or selected_tag %}<a href="{{ url_for('user.view_user_profile', user_id=profile_user.id) }}">查看全部</a>{% endif %}
             </div>
-            <div class="music-card-cover" id="musicCover">
-                {% if music_tracks[0].cover_path %}
-                <img src="{{ url_for('static', filename=music_tracks[0].cover_path) }}" alt="封面">
-                {% else %}
-                <div class="music-cover-placeholder">🎵</div>
-                {% endif %}
-            </div>
-            <div class="music-card-info">
-                <p class="music-card-title" id="musicTitle">{{ music_tracks[0].title }}</p>
-                <p class="music-card-artist" id="musicArtist">{{ music_tracks[0].artist or '未知艺术家' }}</p>
-            </div>
-            <div class="music-card-controls">
-                <button id="prevTrack" class="music-control-btn" title="上一首">⏮</button>
-                <button id="playPause" class="music-control-btn music-play-btn" title="播放/暂停">▶</button>
-                <button id="nextTrack" class="music-control-btn" title="下一首">⏭</button>
-            </div>
-            <div class="music-card-progress">
-                <input type="range" id="musicProgress" min="0" max="100" value="0">
-                <span id="currentTime">0:00</span>
-                <span id="totalTime">0:00</span>
-            </div>
-        </div>
-
-        <script>
-        (function() {
-            var tracks = [
-                {% for track in music_tracks %}
-                {
-                    id: {{ track.id }},
-                    title: {{ track.title|tojson }},
-                    artist: {{ track.artist|tojson }},
-                    audio: '{{ url_for("static", filename=track.audio_path) }}',
-                    cover: {{ url_for("static", filename=track.cover_path)|tojson if track.cover_path else '""' }}
-                }{% if not loop.last %},{% endif %}
+            <div class="category-grid">
+                <a href="{{ url_for('user.view_user_profile', user_id=profile_user.id) }}" class="category-card category-all{% if not selected_category and not selected_tag %} active{% endif %}">
+                    <span class="category-icon">◎</span>
+                    <span class="category-copy"><strong>全部</strong><small>不分区浏览所有板块帖子</small></span>
+                    <span class="category-count">{{ post_count }}</span>
+                </a>
+                {% for item in category_cards %}
+                <a href="{{ url_for('user.view_user_profile', user_id=profile_user.id, category=item.slug) }}" class="category-card category-{{ item.slug }}{% if selected_category == item.slug %} active{% endif %}">
+                    <span class="category-icon">{{ item.icon }}</span>
+                    <span class="category-copy"><strong>{{ item.label }}</strong><small>{{ item.description }}</small></span>
+                    <span class="category-count">{{ item.count }}</span>
+                </a>
                 {% endfor %}
-            ];
-
-            var audio = new Audio();
-            var currentIndex = 0;
-            var isPlaying = false;
-
-            var titleEl = document.getElementById('musicTitle');
-            var artistEl = document.getElementById('musicArtist');
-            var coverEl = document.getElementById('musicCover');
-            var playBtn = document.getElementById('playPause');
-            var progressEl = document.getElementById('musicProgress');
-            var currentTimeEl = document.getElementById('currentTime');
-            var totalTimeEl = document.getElementById('totalTime');
-
-            function loadTrack(index) {
-                if (index < 0) index = tracks.length - 1;
-                if (index >= tracks.length) index = 0;
-                currentIndex = index;
-                var track = tracks[currentIndex];
-
-                audio.src = track.audio;
-                titleEl.textContent = track.title;
-                artistEl.textContent = track.artist || '未知艺术家';
-
-                if (track.cover) {
-                    coverEl.innerHTML = '<img src="' + track.cover + '" alt="封面">';
-                } else {
-                    coverEl.innerHTML = '<div class="music-cover-placeholder">🎵</div>';
-                }
-
-                localStorage.setItem('userMusicIndex', currentIndex);
-                localStorage.setItem('userMusicTitle', track.title);
-            }
-
-            function togglePlay() {
-                if (isPlaying) {
-                    audio.pause();
-                    playBtn.textContent = '▶';
-                    coverEl.classList.remove('spinning');
-                } else {
-                    audio.play().then(function() {
-                        playBtn.textContent = '⏸';
-                        coverEl.classList.add('spinning');
-                    }).catch(function() {});
-                }
-                isPlaying = !isPlaying;
-            }
-
-            playBtn.addEventListener('click', togglePlay);
-
-            document.getElementById('prevTrack').addEventListener('click', function() {
-                loadTrack(currentIndex - 1);
-                if (isPlaying) audio.play();
-            });
-
-            document.getElementById('nextTrack').addEventListener('click', function() {
-                loadTrack(currentIndex + 1);
-                if (isPlaying) audio.play();
-            });
-
-            audio.addEventListener('timeupdate', function() {
-                if (audio.duration) {
-                    progressEl.value = (audio.currentTime / audio.duration) * 100;
-                    currentTimeEl.textContent = formatTime(audio.currentTime);
-                    totalTimeEl.textContent = formatTime(audio.duration);
-                }
-            });
-
-            progressEl.addEventListener('input', function() {
-                if (audio.duration) {
-                    audio.currentTime = (progressEl.value / 100) * audio.duration;
-                }
-            });
-
-            audio.addEventListener('ended', function() {
-                loadTrack(currentIndex + 1);
-                audio.play();
-            });
-
-            function formatTime(seconds) {
-                var min = Math.floor(seconds / 60);
-                var sec = Math.floor(seconds % 60);
-                return min + ':' + (sec < 10 ? '0' : '') + sec;
-            }
-
-            loadTrack(0);
-
-            var savedIndex = localStorage.getItem('userMusicIndex');
-            if (savedIndex && parseInt(savedIndex) < tracks.length) {
-                loadTrack(parseInt(savedIndex));
-            }
-        })();
-        </script>
-        {% endif %}
-
-        {% if posts %}
-        <div class="profile-posts">
-            <h2>公开博文</h2>
-            <div class="post-grid">
-                {% for post in posts %}{% include '_post_card.html' %}{% endfor %}
             </div>
-        </div>
-        {% else %}
-        <div class="empty-state">
-            <p>暂无公开博文。</p>
-        </div>
-        {% endif %}
+        </section>
 
-        <div class="guestbook-section">
-            <h2>访客留言</h2>
-
-            {% if session.logged_in %}
-            <div class="guestbook-form">
-                <form method="post" action="{{ url_for('user.post_guestbook', user_id=profile_user.id) }}">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <div class="form-group">
-                        <textarea name="content" class="form-control" rows="3" placeholder="写下你的留言..." maxlength="500" required></textarea>
-                    </div>
-                    <button type="submit" class="btn btn-primary">发表留言</button>
-                </form>
-            </div>
-            {% else %}
-            <p class="login-hint"><a href="{{ url_for('auth.login', next=request.url) }}">登录</a>后可以留言。</p>
-            {% endif %}
-
-            {% if guestbook_messages %}
-            <div class="guestbook-list">
-                {% for message in guestbook_messages %}
-                <div class="guestbook-item" id="msg-{{ message.id }}">
-                    <div class="guestbook-header">
-                        <div class="guestbook-avatar-container">
-                            {% if message.author and message.author.status == 'active' and message.author.profile and message.author.profile.avatar %}
-                            <img src="{{ url_for('static', filename=message.author.profile.avatar) }}" alt="{{ message.nickname }}" class="guestbook-avatar">
-                            {% else %}
-                            <img src="{{ url_for('static', filename='images/default-avatar.jpg') }}" alt="默认头像" class="guestbook-avatar">
-                            {% endif %}
-                        </div>
-                        <div class="guestbook-meta">
-                            <span class="guestbook-nickname{% if message.author.status != 'active' %} deactivated-user{% endif %}">{{ message.nickname }}</span>
-                            <span class="guestbook-time">{{ message.created_at.strftime('%Y-%m-%d %H:%M') }}</span>
-                        </div>
-                        {% if session.user_id == message.author_id or is_owner or is_admin %}
-                        <form method="post" action="{{ url_for('user.delete_guestbook', message_id=message.id) }}" class="guestbook-delete-form">
-                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                            <button type="submit" class="comment-delete-btn" title="删除留言" onclick="return confirm('确定删除这条留言吗？');">×</button>
-                        </form>
+        <div class="profile-layout">
+            <main class="profile-feed">
+                {% if pinned_post %}
+                {% set pinned_category = category_meta(pinned_post.category) %}
+                <section class="profile-section">
+                    <div class="profile-section-heading"><div><span class="section-eyebrow">PINNED</span><h2>置顶博文</h2></div></div>
+                    <article class="profile-featured-card">
+                        {% if pinned_post.display_images %}
+                        <a class="featured-cover" href="{{ url_for('main.view_post', post_id=pinned_post.id) }}"><img src="{{ url_for('static', filename=pinned_post.display_images[0]) }}" alt="{{ pinned_post.title }}"></a>
                         {% endif %}
+                        <div class="featured-body">
+                            <div class="featured-meta"><span class="post-category-badge">⌃ 置顶 · {{ pinned_category.icon }} {{ pinned_category.label }}</span><time>{{ pinned_post.created_at.strftime('%Y-%m-%d') }}</time></div>
+                            <h2><a href="{{ url_for('main.view_post', post_id=pinned_post.id) }}">{{ pinned_post.title or '无标题动态' }}</a></h2>
+                            <p>{{ pinned_post.excerpt }}</p>
+                            <div class="featured-tags">{% for tag in pinned_post.tags or [] %}<a href="{{ url_for('user.view_user_profile', user_id=profile_user.id, tag=tag) }}">#{{ tag }}</a>{% endfor %}</div>
+                        </div>
+                    </article>
+                </section>
+                {% endif %}
+
+                <section class="profile-section profile-posts">
+                    <div class="profile-section-heading">
+                        <div><span class="section-eyebrow">LATEST</span><h2>{% if selected_category %}{{ category_meta(selected_category).label }}{% elif selected_tag %}#{{ selected_tag }}{% else %}最新动态{% endif %}</h2></div>
+                        <span class="section-result-count">{{ posts|length }} 篇</span>
                     </div>
-                    <div class="guestbook-body">{{ message.content }}</div>
-                </div>
-                {% endfor %}
-            </div>
-            {% else %}
-            <p class="empty-guestbook">还没有留言，来留下第一条吧！</p>
-            {% endif %}
+                    {% if latest_posts %}
+                    <div class="post-grid">{% for post in latest_posts %}{% include '_post_card.html' %}{% endfor %}</div>
+                    {% elif pinned_post %}
+                    <p class="profile-only-featured">更多内容正在路上。</p>
+                    {% else %}
+                    <div class="empty-state"><p>这个分区还没有公开博文。</p>{% if is_owner %}<a href="{{ url_for('main.create_post') }}" class="btn btn-primary">发布第一篇</a>{% endif %}</div>
+                    {% endif %}
+                </section>
+            </main>
+
+            <aside class="profile-rail">
+                <section class="profile-side-card">
+                    <div class="side-card-heading"><span>TAG INDEX</span><h2>热门标签</h2></div>
+                    {% if popular_tags %}
+                    <div class="profile-tag-cloud">
+                        {% for tag, count in popular_tags %}<a href="{{ url_for('user.view_user_profile', user_id=profile_user.id, tag=tag) }}"{% if selected_tag == tag %} class="active"{% endif %}>#{{ tag }} <small>{{ count }}</small></a>{% endfor %}
+                    </div>
+                    {% else %}<p class="side-empty">发布博文时添加标签，兴趣索引会出现在这里。</p>{% endif %}
+                </section>
+
+                <section class="guestbook-section profile-guestbook">
+                    <div class="side-card-heading"><span>GUESTBOOK</span><h2>访客留言</h2></div>
+                    {% if session.logged_in %}
+                    <div class="guestbook-form"><form method="post" action="{{ url_for('user.post_guestbook', user_id=profile_user.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><div class="form-group"><textarea name="content" class="form-control" rows="3" placeholder="写下你的留言..." maxlength="500" required></textarea></div><button type="submit" class="btn btn-primary">发表留言</button></form></div>
+                    {% else %}<p class="login-hint"><a href="{{ url_for('auth.login', next=request.url) }}">登录</a>后可以留言。</p>{% endif %}
+
+                    {% if guestbook_messages %}<div class="guestbook-list">
+                        {% for message in guestbook_messages %}
+                        <div class="guestbook-item" id="msg-{{ message.id }}">
+                            <div class="guestbook-header">
+                                <div class="guestbook-avatar-container"><img src="{{ url_for('static', filename=message.author.profile.avatar if message.author and message.author.status == 'active' and message.author.profile and message.author.profile.avatar else 'images/default-avatar.jpg') }}" alt="{{ message.nickname }}" class="guestbook-avatar"></div>
+                                <div class="guestbook-meta"><span class="guestbook-nickname{% if message.author.status != 'active' %} deactivated-user{% endif %}">{{ message.nickname }}</span><span class="guestbook-time">{{ message.created_at.strftime('%Y-%m-%d %H:%M') }}</span></div>
+                                {% if session.user_id == message.author_id or is_owner or is_admin %}<form method="post" action="{{ url_for('user.delete_guestbook', message_id=message.id) }}" class="guestbook-delete-form"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit" class="comment-delete-btn" title="删除留言" onclick="return confirm('确定删除这条留言吗？');">×</button></form>{% endif %}
+                            </div>
+                            <div class="guestbook-body">{{ message.content }}</div>
+                        </div>
+                        {% endfor %}
+                    </div>{% else %}<p class="empty-guestbook">还没有留言，来留下第一条吧！</p>{% endif %}
+                </section>
+
+                {% if photo_items %}
+                <section class="profile-side-card">
+                    <div class="side-card-heading"><span>MEMORIES</span><h2>照片墙</h2></div>
+                    <div class="profile-photo-wall">
+                        {% for item in photo_items %}<a href="{{ url_for('main.view_post', post_id=item.post.id) }}"><img src="{{ url_for('static', filename=item.path) }}" alt="{{ item.post.title or '照片' }}" loading="lazy"></a>{% endfor %}
+                    </div>
+                    <a class="side-card-link" href="{{ url_for('user.view_user_profile', user_id=profile_user.id, category='photo') }}">进入光影相册 →</a>
+                </section>
+                {% endif %}
+            </aside>
         </div>
     </div>
 </div>
-
 {% endblock %}

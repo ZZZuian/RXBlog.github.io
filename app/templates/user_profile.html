@@ -61,7 +61,7 @@
                 <section class="profile-section">
                     <div class="profile-section-heading"><div><span class="section-eyebrow">PINNED</span><h2>置顶博文</h2></div></div>
                     <article class="profile-featured-card">
-                        <a class="featured-cover" href="{{ url_for('main.view_post', post_id=pinned_post.id) }}"><img src="{{ url_for('static', filename=pinned_post.cover_image) }}" alt="{{ pinned_post.title }}"></a>
+                        <a class="featured-cover" href="{{ url_for('main.view_post', post_id=pinned_post.id) }}">{% if pinned_post.display_images %}<img src="{{ url_for('static', filename=pinned_post.cover_image) }}" alt="{{ pinned_post.title }}">{% elif pinned_post.video_items %}<video class="video-cover-preview" src="{{ url_for('static', filename=pinned_post.video_items[0].media.file_path) }}" muted playsinline preload="metadata" aria-hidden="true"></video>{% else %}<img src="{{ url_for('static', filename=pinned_post.cover_image) }}" alt="{{ pinned_post.title }}">{% endif %}</a>
                         <div class="featured-body">
                             <div class="featured-meta"><span class="post-category-badge">⌃ 置顶 · {{ pinned_category.icon }} {{ pinned_category.label }}</span><time>{{ pinned_post.created_at|localtime('%Y-%m-%d') }}</time></div>
                             <h2><a href="{{ url_for('main.view_post', post_id=pinned_post.id) }}">{{ pinned_post.title or '无标题动态' }}</a></h2>

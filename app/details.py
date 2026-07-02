@@ -13,8 +13,12 @@ def get_details(user_id=None):
     }
     user_id = user_id if user_id is not None else session.get('user_id')
     user = db.session.get(User, user_id) if user_id else None
-    if user and user.profile:
+    if user and user.status == 'active' and user.profile:
         details['author_name'] = user.profile.nickname
         details['profile'] = user.profile
         details['current_user'] = user
+    elif user_id and user_id == session.get('user_id'):
+        # Account deletion/deactivation can leave a signed browser with an
+        # otherwise valid session cookie. Clear it before base.html renders.
+        session.clear()
     return details

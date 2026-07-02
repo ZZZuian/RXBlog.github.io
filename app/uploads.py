@@ -12,6 +12,8 @@ from app.models import Media, PostImage
 
 MAX_IMAGE_SIZE = 5 * 1024 * 1024
 MAX_POST_IMAGES = 9
+MAX_VIDEO_SIZE = 30 * 1024 * 1024
+MAX_POST_VIDEOS = 1
 FORMAT_RULES = {
     'JPEG': ({'.jpg', '.jpeg'}, '.jpg', 'image/jpeg'),
     'PNG': ({'.png'}, '.png', 'image/png'),
@@ -26,6 +28,13 @@ class UploadValidationError(ValueError):
 
 @dataclass
 class PreparedImage:
+    data: bytes
+    extension: str
+    mime_type: str
+
+
+@dataclass
+class PreparedVideo:
     data: bytes
     extension: str
     mime_type: str
@@ -91,6 +100,65 @@ def store_images(post, uploader_id, prepared_images):
             absolute_path.write_bytes(prepared.data)
             relative_path = 'uploads/posts/{}'.format(filename)
             media = Media(uploader_id=uploader_id, media_type='image',
+                          file_path=relative_path,
+                          mime_type=prepared.mime_type,
+                          file_size=len(prepared.data))
+            post.image_items.append(PostImage(media=media,
+                                               sort_order=start_order + offset))
+            created_paths.append(absolute_path)
+        return created_paths
+    except Exception:
+        cleanup_paths(created_paths)
+        raise
+
+
+def prepare_video(file_storage):
+    filename = (file_storage.filename or '').strip()
+    if not filename:
+        raise UploadValidationError('请选择视频文件。')
+    extension = Path(filename).suffix.lower()
+    if extension not in {'.mp4', '.webm'}:
+        raise UploadValidationError('仅支持 MP4、WebM 视频。')
+
+    file_storage.stream.seek(0)
+    data = file_storage.stream.read(MAX_VIDEO_SIZE + 1)
+    file_storage.stream.seek(0)
+    if len(data) > MAX_VIDEO_SIZE:
+        raise UploadValidationError('视频文件不能超过 30MB。')
+    if not data:
+        raise UploadValidationError('视频文件不能为空。')
+
+    if extension == '.mp4':
+        valid_content = len(data) >= 12 and data[4:8] == b'ftyp'
+        mime_type = 'video/mp4'
+    else:
+        valid_content = data.startswith(b'\x1a\x45\xdf\xa3')
+        mime_type = 'video/webm'
+    if not valid_content:
+        raise UploadValidationError('文件内容不是有效的 {} 视频。'.format(
+            'MP4' if extension == '.mp4' else 'WebM'))
+    return PreparedVideo(data=data, extension=extension, mime_type=mime_type)
+
+
+def prepare_videos(file_storages, existing_count=0):
+    files = [item for item in file_storages if item and item.filename]
+    if existing_count + len(files) > MAX_POST_VIDEOS:
+        raise UploadValidationError('每篇博文最多上传 1 个视频。')
+    return [prepare_video(item) for item in files]
+
+
+def store_videos(post, uploader_id, prepared_videos):
+    root = _upload_root()
+    root.mkdir(parents=True, exist_ok=True)
+    created_paths = []
+    start_order = len(post.image_items)
+    try:
+        for offset, prepared in enumerate(prepared_videos):
+            filename = '{}{}'.format(uuid4().hex, prepared.extension)
+            absolute_path = root / filename
+            absolute_path.write_bytes(prepared.data)
+            relative_path = 'uploads/posts/{}'.format(filename)
+            media = Media(uploader_id=uploader_id, media_type='video',
                           file_path=relative_path,
                           mime_type=prepared.mime_type,
                           file_size=len(prepared.data))

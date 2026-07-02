@@ -83,6 +83,14 @@ class CommunityPlatformTest(unittest.TestCase):
         stream.seek(0)
         return stream, filename
 
+    @staticmethod
+    def video_file(filename='clip.mp4'):
+        if filename.lower().endswith('.webm'):
+            data = b'\x1a\x45\xdf\xa3' + b'webm-test-payload'
+        else:
+            data = b'\x00\x00\x00\x18ftypisom' + b'mp4-test-payload'
+        return BytesIO(data), filename
+
     def test_public_feed_interaction_and_author_permissions(self):
         register_page = self.client.get('/admin/register').get_data(as_text=True)
         self.assertNotIn('name="account"', register_page)
@@ -500,6 +508,71 @@ class CommunityPlatformTest(unittest.TestCase):
             self.assertIsNone(Post.query.filter_by(
                 title='Oversized image').first())
 
+    def test_post_video_upload_replace_cleanup_and_validation(self):
+        account, _ = self.register('Video User')
+        self.login(account)
+
+        response = self.client.post('/post/new', data={
+            'title': 'Video post', 'content': 'A post with video.',
+            'tags': '', 'video': self.video_file('first.mp4'),
+            'submit': '发布博文'
+        }, content_type='multipart/form-data', follow_redirects=True)
+        self.assertEqual(response.status_code, 200)
+        page = response.get_data(as_text=True)
+        self.assertIn('class="post-video"', page)
+        self.assertIn('type="video/mp4"', page)
+        self.assertIn('class="article-cover-video-frame"', page)
+        self.assertIn('article-cover-video video-cover-preview', page)
+        home = self.client.get('/').get_data(as_text=True)
+        self.assertIn('class="video-cover-preview"', home)
+
+        with app.app_context():
+            post = Post.query.filter_by(title='Video post').one()
+            post_id = post.id
+            self.assertEqual(len(post.video_items), 1)
+            self.assertEqual(len(post.stored_image_items), 0)
+            video_item_id = post.video_items[0].id
+            first_path = Path(self.upload_dir) / Path(
+                post.video_items[0].media.file_path).name
+            self.assertTrue(first_path.exists())
+
+        replacement = self.client.post(
+            '/post/{}/edit'.format(post_id), data={
+                'title': 'Video post', 'content': 'Updated video.',
+                'tags': '', 'remove_media_ids': str(video_item_id),
+                'video': self.video_file('replacement.webm'),
+                'submit': '保存修改'
+            }, content_type='multipart/form-data', follow_redirects=True)
+        self.assertEqual(replacement.status_code, 200)
+        self.assertIn('type="video/webm"',
+                      replacement.get_data(as_text=True))
+        self.assertFalse(first_path.exists())
+
+        with app.app_context():
+            post = db.session.get(Post, post_id)
+            self.assertEqual(len(post.video_items), 1)
+            replacement_path = Path(self.upload_dir) / Path(
+                post.video_items[0].media.file_path).name
+            self.assertTrue(replacement_path.exists())
+
+        invalid = self.client.post('/post/new', data={
+            'title': 'Invalid video', 'content': 'Must not be saved.',
+            'tags': '',
+            'video': (BytesIO(b'not-a-real-video'), 'fake.mp4'),
+            'submit': '发布博文'
+        }, content_type='multipart/form-data', follow_redirects=True)
+        self.assertIn('不是有效的 MP4 视频',
+                      invalid.get_data(as_text=True))
+        with app.app_context():
+            self.assertIsNone(Post.query.filter_by(
+                title='Invalid video').first())
+
+        deleted = self.client.post(
+            '/post/{}/delete'.format(post_id),
+            data={'submit': '删除记录'}, follow_redirects=True)
+        self.assertEqual(deleted.status_code, 200)
+        self.assertFalse(replacement_path.exists())
+
     def test_like_ajax_includes_valid_csrf_token(self):
         alice_account, _ = self.register('Alice')
         self.login(alice_account)
@@ -603,6 +676,21 @@ class CommunityPlatformTest(unittest.TestCase):
         post_after_reuse = self.client.get(
             '/post/{}'.format(post_id)).get_data(as_text=True)
         self.assertIn('该用户已注销', post_after_reuse)
+
+    def test_stale_login_session_is_cleared(self):
+        with self.client.session_transaction() as stale_session:
+            stale_session['logged_in'] = True
+            stale_session['user_id'] = 999999
+
+        response = self.client.get('/')
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn('sidebar-profile-avatar',
+                         response.get_data(as_text=True))
+        with self.client.session_transaction() as current_session:
+            self.assertNotIn('logged_in', current_session)
+            self.assertNotIn('user_id', current_session)
+
+        self.assertEqual(self.client.get('/favicon.ico').status_code, 404)
 
     def test_music_context_priority_and_profile_player_is_global(self):
         alice_account, _ = self.register('Alice')

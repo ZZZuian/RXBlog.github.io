@@ -22,14 +22,22 @@
         {% for error in form.tags.errors %}<span class="help-block">{{ error }}</span>{% endfor %}
     </div>
 
-    {% if post and post.image_items %}
+    {% if post and (post.stored_image_items or post.video_items) %}
     <div class="existing-images">
-        <label>已有图片（勾选后保存即可移除）</label>
+        <label>已有媒体（勾选后保存即可移除）</label>
         <div class="image-manage-grid">
-        {% for item in post.image_items %}
+        {% for item in post.stored_image_items %}
             <label class="image-manage-item">
                 <img src="{{ url_for('static', filename=item.media.file_path) }}" alt="已有图片">
-                <span><input type="checkbox" name="remove_image_ids" value="{{ item.id }}"> 移除</span>
+                <span><input type="checkbox" name="remove_media_ids" value="{{ item.id }}"> 移除图片</span>
+            </label>
+        {% endfor %}
+        {% for item in post.video_items %}
+            <label class="image-manage-item video-manage-item">
+                <video preload="metadata" muted>
+                    <source src="{{ url_for('static', filename=item.media.file_path) }}" type="{{ item.media.mime_type }}">
+                </video>
+                <span><input type="checkbox" name="remove_media_ids" value="{{ item.id }}"> 移除视频</span>
             </label>
         {% endfor %}
         </div>
@@ -41,6 +49,12 @@
         {{ form.images(class_='form-control', accept='.jpg,.jpeg,.png,.gif,.webp') }}
         <p class="help-block">支持 JPG、PNG、GIF、WebP；最多 9 张，单张不超过 5MB。</p>
         {% for error in form.images.errors %}<span class="help-block">{{ error }}</span>{% endfor %}
+    </div>
+    <div class="form-group{% if form.video.errors %} has-error{% endif %}">
+        {{ form.video.label }}
+        {{ form.video(class_='form-control', accept='.mp4,.webm,video/mp4,video/webm') }}
+        <p class="help-block">支持 MP4、WebM；每篇博文最多 1 个，不超过 30MB。</p>
+        {% for error in form.video.errors %}<span class="help-block">{{ error }}</span>{% endfor %}
     </div>
     {{ form.submit(class_='btn btn-primary btn-lg') }}
     <a class="btn btn-default btn-lg" href="{{ url_for('main.view_post', post_id=post.id) if post else url_for('main.browse_all_entries') }}">取消</a>

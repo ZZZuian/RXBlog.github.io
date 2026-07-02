@@ -13,7 +13,8 @@ from app.parse import parse_input
 from app.taxonomy import category_meta, normalize_tags
 from app.time_utils import format_china_time
 from app.uploads import (UploadValidationError, cleanup_paths,
-                         media_absolute_path, prepare_images, store_images)
+                         media_absolute_path, prepare_images, prepare_videos,
+                         store_images, store_videos)
 from . import main
 from .forms import (CommentForm, DeleteEntryForm, PinPostForm, PostForm,
                     RawEntryForm)
@@ -46,6 +47,12 @@ def _add_image_error(form, message):
     errors = list(form.images.errors)
     errors.append(message)
     form.images.errors = errors
+
+
+def _add_video_error(form, message):
+    errors = list(form.video.errors)
+    errors.append(message)
+    form.video.errors = errors
 
 
 def _is_admin(user_id=None):
@@ -185,22 +192,31 @@ def create_post():
     form = PostForm()
     if form.validate_on_submit():
         created_paths = []
+        upload_field = 'images'
         try:
-            prepared = prepare_images(form.images.data or [])
+            prepared_images = prepare_images(form.images.data or [])
+            upload_field = 'video'
+            prepared_videos = prepare_videos([form.video.data])
             post = Post(author_id=session['user_id'], title=form.title.data.strip(),
                         content=form.content.data.strip(), board='public',
                         category=form.category.data,
                         tags=_parse_tags(form.tags.data), status='published')
             db.session.add(post)
             db.session.flush()
-            created_paths = store_images(post, session['user_id'], prepared)
+            created_paths = store_images(
+                post, session['user_id'], prepared_images)
+            created_paths.extend(store_videos(
+                post, session['user_id'], prepared_videos))
             db.session.commit()
             flash('博文发布成功。')
             return redirect(url_for('main.view_post', post_id=post.id))
         except UploadValidationError as error:
             db.session.rollback()
             cleanup_paths(created_paths)
-            _add_image_error(form, str(error))
+            if upload_field == 'video':
+                _add_video_error(form, str(error))
+            else:
+                _add_image_error(form, str(error))
         except Exception:
             db.session.rollback()
             cleanup_paths(created_paths)
@@ -331,18 +347,31 @@ def edit_post(post_id):
         abort(403)
     form = PostForm()
     if form.validate_on_submit():
-        selected_ids = {int(value) for value in
-                        request.form.getlist('remove_image_ids')
+        selected_values = (request.form.getlist('remove_media_ids') +
+                           request.form.getlist('remove_image_ids'))
+        selected_ids = {int(value) for value in selected_values
                         if value.isdigit()}
         remove_items = [item for item in post.image_items
                         if item.id in selected_ids]
-        existing_count = (len(post.image_items) + len(post.images or []) -
-                          len(remove_items))
+        removed_image_count = sum(
+            1 for item in remove_items
+            if item.media and item.media.media_type == 'image')
+        removed_video_count = sum(
+            1 for item in remove_items
+            if item.media and item.media.media_type == 'video')
+        existing_image_count = (len(post.stored_image_items) +
+                                len(post.images or []) - removed_image_count)
+        existing_video_count = len(post.video_items) - removed_video_count
         created_paths = []
         removed_paths = [media_absolute_path(item.media)
                          for item in remove_items]
+        upload_field = 'images'
         try:
-            prepared = prepare_images(form.images.data or [], existing_count)
+            prepared_images = prepare_images(
+                form.images.data or [], existing_image_count)
+            upload_field = 'video'
+            prepared_videos = prepare_videos(
+                [form.video.data], existing_video_count)
             post.title = form.title.data.strip()
             post.content = form.content.data.strip()
             post.board = 'public'
@@ -355,7 +384,10 @@ def edit_post(post_id):
                 db.session.delete(media)
             for index, item in enumerate(post.image_items):
                 item.sort_order = index
-            created_paths = store_images(post, session['user_id'], prepared)
+            created_paths = store_images(
+                post, session['user_id'], prepared_images)
+            created_paths.extend(store_videos(
+                post, session['user_id'], prepared_videos))
             db.session.commit()
             cleanup_paths(removed_paths)
             flash('博文已更新。')
@@ -363,7 +395,10 @@ def edit_post(post_id):
         except UploadValidationError as error:
             db.session.rollback()
             cleanup_paths(created_paths)
-            _add_image_error(form, str(error))
+            if upload_field == 'video':
+                _add_video_error(form, str(error))
+            else:
+                _add_image_error(form, str(error))
         except Exception:
             db.session.rollback()
             cleanup_paths(created_paths)

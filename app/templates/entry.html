@@ -5,9 +5,19 @@
 
 <div class="article-detail-layout">
     <article class="article-reader-card">
+        {% if post.display_images %}
         <button class="article-cover gallery-thumb" type="button" data-full="{{ url_for('static', filename=post.cover_image) }}">
             <img src="{{ url_for('static', filename=post.cover_image) }}" alt="{{ post.title or '博文封面' }}">
         </button>
+        {% elif post.video_items %}
+        <div class="article-cover-video-frame">
+            <video class="article-cover-video video-cover-preview" src="{{ url_for('static', filename=post.video_items[0].media.file_path) }}" muted playsinline preload="metadata" aria-label="{{ post.title or '博文' }}的视频预览"></video>
+        </div>
+        {% else %}
+        <button class="article-cover gallery-thumb" type="button" data-full="{{ url_for('static', filename=post.cover_image) }}">
+            <img src="{{ url_for('static', filename=post.cover_image) }}" alt="{{ post.title or '博文封面' }}">
+        </button>
+        {% endif %}
 
         <div class="article-reader-inner">
             {% if post.author.status == 'active' %}
@@ -53,6 +63,17 @@
                 <button class="gallery-thumb" type="button" data-full="{{ url_for('static', filename=image_path) }}">
                     <img src="{{ url_for('static', filename=image_path) }}" alt="{{ post.title or '博文图片' }} {{ loop.index + 1 }}" loading="lazy">
                 </button>
+                {% endfor %}
+            </div>
+            {% endif %}
+
+            {% if post.video_items %}
+            <div class="post-video-list">
+                {% for item in post.video_items %}
+                <video class="post-video" controls preload="metadata" playsinline>
+                    <source src="{{ url_for('static', filename=item.media.file_path) }}" type="{{ item.media.mime_type }}">
+                    当前浏览器不支持视频播放。
+                </video>
                 {% endfor %}
             </div>
             {% endif %}
@@ -108,6 +129,7 @@
                 <div><dt>分区</dt><dd>{{ entry_category.label }}</dd></div>
                 <div><dt>阅读时间</dt><dd>约 {{ reading_minutes }} 分钟</dd></div>
                 <div><dt>图片</dt><dd>{{ post.display_images|length }} 张</dd></div>
+                <div><dt>视频</dt><dd>{{ post.video_items|length }} 个</dd></div>
             </dl>
         </section>
     </aside>

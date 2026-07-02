@@ -1,6 +1,12 @@
 <article class="post-card">
     <a class="post-card-cover" href="{{ url_for('main.view_post', post_id=post.id) }}">
+        {% if post.display_images %}
         <img src="{{ url_for('static', filename=post.cover_image) }}" alt="{{ post.title or '博文版头' }}" loading="lazy">
+        {% elif post.video_items %}
+        <video class="video-cover-preview" src="{{ url_for('static', filename=post.video_items[0].media.file_path) }}" muted playsinline preload="metadata" aria-hidden="true"></video>
+        {% else %}
+        <img src="{{ url_for('static', filename=post.cover_image) }}" alt="{{ post.title or '博文版头' }}" loading="lazy">
+        {% endif %}
     </a>
     <div class="post-card-body">
         <div class="post-card-meta">

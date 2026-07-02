@@ -82,6 +82,17 @@ class Post(db.Model):
     image_items = db.relationship('PostImage', back_populates='post',
                                   cascade='all, delete-orphan',
                                   order_by='PostImage.sort_order')
+
+    @property
+    def stored_image_items(self):
+        return [item for item in self.image_items
+                if item.media and item.media.media_type == 'image']
+
+    @property
+    def video_items(self):
+        return [item for item in self.image_items
+                if item.media and item.media.media_type == 'video']
+
     @property
     def likes_count(self):
         return self.legacy_likes + len(self.likes)
@@ -96,8 +107,7 @@ class Post(db.Model):
 
     @property
     def display_images(self):
-        stored = [item.media.file_path for item in self.image_items
-                  if item.media]
+        stored = [item.media.file_path for item in self.stored_image_items]
         return stored + list(self.images or [])
 
     @property

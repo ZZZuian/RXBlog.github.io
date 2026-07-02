@@ -5,7 +5,7 @@
 
 {% block styles %}
 {{ super() }}
-<link rel="stylesheet" href="{{ url_for('static', filename='custom.css') }}?v=20260701b">
+<link rel="stylesheet" href="{{ url_for('static', filename='custom.css') }}?v=20260702-video-cover">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&family=Noto+Serif+SC:wght@500;600;700&display=swap">
 {% endblock %}
 
@@ -42,7 +42,7 @@
 <aside id="siteSidebar" class="site-sidebar" aria-label="主导航">
     <div class="sidebar-brand">
         <a href="{{ url_for('main.browse_all_entries') }}">
-            <span class="brand-mark">C</span>
+            <img class="brand-mark" src="{{ url_for('static', filename='images/site-logo.png') }}" alt="RXBlog 网站图标">
             <span class="brand-copy"><strong>{{ details['chronofile_name'] }}</strong><small>COMMUNITY BLOG</small></span>
         </a>
         <button id="sidebarClose" class="sidebar-close" type="button" aria-label="关闭导航">×</button>
@@ -537,8 +537,23 @@
         if (lightbox) lightbox.hidden = true;
     }
 
+    function initializeVideoCoverPreviews() {
+        document.querySelectorAll('video.video-cover-preview').forEach(function(video) {
+            if (video.dataset.previewInitialized === 'true') return;
+            video.dataset.previewInitialized = 'true';
+            function showFirstFrame() {
+                if (!Number.isFinite(video.duration) || video.duration <= 0) return;
+                video.currentTime = Math.min(0.1, video.duration / 2);
+                video.pause();
+            }
+            if (video.readyState >= 1) showFirstFrame();
+            else video.addEventListener('loadedmetadata', showFirstFrame, {once: true});
+        });
+    }
+
     function initializePageFeatures() {
         initializeProfileContrast();
+        initializeVideoCoverPreviews();
     }
 
     document.addEventListener('click', function(event) {

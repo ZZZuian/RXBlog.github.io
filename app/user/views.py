@@ -157,7 +157,7 @@ def view_user_profile(user_id):
                            liked_post_ids=liked_post_ids,
                            is_owner=is_owner,
                            is_admin=is_admin,
-                           music_profile_user_id=user_id,
+                           music_profile_user_id='' if is_owner else user_id,
                            details=get_details())
 
 
@@ -348,8 +348,6 @@ def settings_music():
                         os.remove(audio_path)
                     if cover_path and os.path.exists(cover_path):
                         os.remove(cover_path)
-                    Post.query.filter_by(music_track_id=track.id).update(
-                        {Post.music_track_id: None}, synchronize_session=False)
                     db.session.delete(track)
                     db.session.commit()
                     flash('音乐已删除。')
@@ -423,30 +421,7 @@ def _enabled_music(user_id):
 
 @user.route('/api/music/context')
 def api_music_context():
-    post_id = request.args.get('post_id', type=int)
     profile_user_id = request.args.get('profile_user_id', type=int)
-    if post_id:
-        post = db.session.scalar(select(Post).where(
-            Post.id == post_id, Post.status == 'published'))
-        if post and post.author.status == 'active':
-            track = post.music_track
-            if (track and track.is_enabled and
-                    track.user_id == post.author_id):
-                return jsonify({
-                    'source': 'post:{}'.format(post.id),
-                    'source_type': 'post',
-                    'playlist': [_serialize_music_track(track)]
-                })
-            author_tracks = _enabled_music(post.author_id)
-            if author_tracks:
-                return jsonify({
-                    'source': 'user:{}'.format(post.author_id),
-                    'source_type': 'author',
-                    'playlist': [_serialize_music_track(track)
-                                 for track in author_tracks]
-                })
-        return _default_music_context()
-
     tracks = _enabled_music(profile_user_id)
     source = 'user:{}'.format(profile_user_id) if tracks else ''
 

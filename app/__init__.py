@@ -34,13 +34,11 @@ with app.app_context():
                             migrate_deactivated_identities,
                             migrate_legacy_times_to_utc,
                             migrate_music_sources_schema,
-                            migrate_post_music_schema,
                             migrate_post_pin_schema,
                             migrate_post_taxonomy_schema,
                             migrate_single_file_static_paths, migrate_tinydb)
     db.create_all()
     migrate_music_sources_schema()
-    migrate_post_music_schema()
     migrate_post_pin_schema()
     migrate_tinydb()
     migrate_legacy_times_to_utc()

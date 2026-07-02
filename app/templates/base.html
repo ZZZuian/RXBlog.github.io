@@ -75,7 +75,7 @@
     </nav>
 
     <div class="sidebar-bottom">
-        <div id="musicPlayer" class="music-player sidebar-music" data-profile-user-id="{{ music_profile_user_id|default('', true) }}" data-post-id="{{ music_post_id|default('', true) }}">
+        <div id="musicPlayer" class="music-player sidebar-music" data-profile-user-id="{{ music_profile_user_id|default('', true) }}" data-post-author-id="{{ page_post_author_id|default('', true) }}">
             <div class="music-disc" aria-hidden="true"><span></span></div>
             <div class="music-main">
                 <div class="music-heading"><span id="musicTitle" class="music-title">背景音乐</span><span id="musicTime">00:00</span></div>
@@ -436,14 +436,60 @@
     });
     window.addEventListener('pagehide', saveMusicState);
 
+    var musicBrowseProfileUserId = '';
+    function readMusicBrowseContext() {
+        try { return JSON.parse(sessionStorage.getItem('rxMusicBrowseContext') || '{}'); }
+        catch (error) { return {}; }
+    }
+    function saveMusicBrowseContext(path, pageKind) {
+        sessionStorage.setItem('rxMusicBrowseContext', JSON.stringify({
+            profileUserId: musicBrowseProfileUserId,
+            path: path,
+            pageKind: pageKind
+        }));
+    }
+    function referrerProfileUserId() {
+        if (!document.referrer) return '';
+        try {
+            var referrer = new URL(document.referrer);
+            if (referrer.origin !== window.location.origin) return '';
+            var match = referrer.pathname.match(/^\/user\/(\d+)\/?$/);
+            return match ? match[1] : '';
+        } catch (error) { return ''; }
+    }
+    function selectMusicBrowseContext(pagePlayer, path, initialLoad) {
+        var profileUserId = pagePlayer.dataset.profileUserId || '';
+        var postAuthorId = pagePlayer.dataset.postAuthorId || '';
+        var pageKind = profileUserId ? 'profile' :
+                       (postAuthorId ? 'post' : 'public');
+
+        if (profileUserId) {
+            musicBrowseProfileUserId = profileUserId;
+        } else if (postAuthorId) {
+            if (initialLoad) {
+                var saved = readMusicBrowseContext();
+                var cameFromMatchingProfile =
+                    String(saved.profileUserId || '') === postAuthorId &&
+                    (saved.path === path ||
+                     referrerProfileUserId() === postAuthorId);
+                musicBrowseProfileUserId = cameFromMatchingProfile ?
+                                           postAuthorId : '';
+            } else if (musicBrowseProfileUserId !== postAuthorId) {
+                musicBrowseProfileUserId = '';
+            }
+        } else {
+            musicBrowseProfileUserId = '';
+        }
+        saveMusicBrowseContext(path, pageKind);
+    }
+
     var musicContextSequence = 0;
     function refreshMusicContext() {
         var requestSequence = ++musicContextSequence;
         var contextUrl = {{ url_for('user.api_music_context')|tojson }};
-        if (player.dataset.postId) {
-            contextUrl += '?post_id=' + encodeURIComponent(player.dataset.postId);
-        } else if (player.dataset.profileUserId) {
-            contextUrl += '?profile_user_id=' + encodeURIComponent(player.dataset.profileUserId);
+        if (musicBrowseProfileUserId) {
+            contextUrl += '?profile_user_id=' +
+                          encodeURIComponent(musicBrowseProfileUserId);
         }
         return fetch(contextUrl, {credentials: 'same-origin'}).then(function(response) {
             if (!response.ok) throw new Error('music context failed');
@@ -530,7 +576,7 @@
         return true;
     }
 
-    function updateShellFromDocument(nextDocument) {
+    function updateShellFromDocument(nextDocument, nextUrl) {
         var nextPanel = nextDocument.querySelector('.content-glass-panel');
         var currentPanel = document.querySelector('.content-glass-panel');
         var nextPlayer = nextDocument.getElementById('musicPlayer');
@@ -550,7 +596,9 @@
         }
 
         player.dataset.profileUserId = nextPlayer.dataset.profileUserId || '';
-        player.dataset.postId = nextPlayer.dataset.postId || '';
+        player.dataset.postAuthorId = nextPlayer.dataset.postAuthorId || '';
+        selectMusicBrowseContext(
+            nextPlayer, new URL(nextUrl, window.location.href).pathname, false);
 
         var nextLinks = nextDocument.querySelectorAll('.sidebar-link');
         var currentLinks = document.querySelectorAll('.sidebar-link');
@@ -586,7 +634,7 @@
         }).then(function(result) {
             if (sequence !== pjaxSequence) return;
             var nextDocument = new DOMParser().parseFromString(result.html, 'text/html');
-            updateShellFromDocument(nextDocument);
+            updateShellFromDocument(nextDocument, result.url);
             if (options.history !== false) history.pushState({pjax: true}, '', result.url);
             if (options.scroll !== false) window.scrollTo({top: 0, behavior: 'auto'});
             setSidebar(false);
@@ -622,6 +670,7 @@
         navigatePjax(window.location.href, {history: false, scroll: false});
     });
 
+    selectMusicBrowseContext(player, window.location.pathname, true);
     initializePageFeatures();
     refreshMusicContext();
     syncPlayingState();

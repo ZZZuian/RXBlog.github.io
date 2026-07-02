@@ -22,23 +22,6 @@
         {% for error in form.tags.errors %}<span class="help-block">{{ error }}</span>{% endfor %}
     </div>
 
-    <section class="post-music-setting">
-        <h3>博文背景音乐</h3>
-        <div class="form-group{% if form.music_track_id.errors %} has-error{% endif %}">
-            {{ form.music_track_id.label }}
-            {{ form.music_track_id(class_='form-control') }}
-            <p class="help-block">默认不设置。进入详情页时依次使用：博文音乐 → 作者主页音乐 → 默认音乐。音乐列表来自你的“主页背景音乐”设置。</p>
-            {% for error in form.music_track_id.errors %}<span class="help-block">{{ error }}</span>{% endfor %}
-        </div>
-        <div class="form-group{% if form.netease_song_id.errors %} has-error{% endif %}">
-            {{ form.netease_song_id.label }}
-            {{ form.netease_song_id(class_='form-control', inputmode='numeric', placeholder='例如：1809646618') }}
-            <p class="help-block">填写后优先使用该歌曲，并自动保存到作者音乐列表；留空则使用上方选择。</p>
-            {% for error in form.netease_song_id.errors %}<span class="help-block">{{ error }}</span>{% endfor %}
-        </div>
-        <a href="{{ url_for('user.settings_music') }}" target="_blank" rel="noopener">管理我的音乐列表</a>
-    </section>
-
     {% if post and post.image_items %}
     <div class="existing-images">
         <label>已有图片（勾选后保存即可移除）</label>

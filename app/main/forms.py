@@ -4,7 +4,7 @@ from flask_wtf import FlaskForm as Form
 from flask_wtf.file import MultipleFileField
 from wtforms import (SelectField, StringField, SubmitField, TextAreaField,
                      ValidationError)
-from wtforms.validators import DataRequired, Length, Optional, Regexp
+from wtforms.validators import DataRequired, Length
 
 from app.taxonomy import CATEGORY_CHOICES, DEFAULT_CATEGORY
 
@@ -39,13 +39,6 @@ class PostForm(Form):
     tags = StringField('标签（用逗号分隔，无需输入 #）',
                        validators=[Length(max=300), no_hashtags])
     images = MultipleFileField('图片（最多 9 张，单张不超过 5MB）')
-    music_track_id = SelectField('博文背景音乐', coerce=int,
-                                 choices=[(0, '不设置，自动选择作者或默认音乐')],
-                                 default=0)
-    netease_song_id = StringField(
-        '网易云歌曲 ID（可选）',
-        validators=[Optional(), Regexp(r'^\d{1,20}$',
-                   message='请输入有效的网易云歌曲 ID。')])
     submit = SubmitField('发布博文')
 
 

@@ -479,14 +479,6 @@ a:hover {
 
 .post-editor { max-width: 850px; margin: 0 auto 40px; }
 .post-content-input { resize: vertical; min-height: 240px; }
-.post-music-setting {
-    margin: 22px 0;
-    padding: 20px;
-    background: rgba(111,99,219,.08);
-    border: 1px solid var(--glass-border);
-    border-radius: 16px;
-}
-.post-music-setting h3 { margin: 0 0 16px; color: var(--text-main); }
 .comment-submit-status {
     display: inline-block;
     margin-left: 10px;

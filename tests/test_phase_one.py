@@ -17,7 +17,7 @@ os.environ['CHRONOFLASK_DATABASE_URI'] = 'sqlite:///{}'.format(
     (_root / 'test-community.db').as_posix())
 os.environ['CHRONOFLASK_DB_PATH'] = str(_root / 'missing-legacy.json')
 
-from sqlalchemy import inspect, select
+from sqlalchemy import inspect, select, text
 from PIL import Image
 
 from app import app
@@ -621,8 +621,12 @@ class CommunityPlatformTest(unittest.TestCase):
                                source_type='netease', source_id='123',
                                stream_url='https://example.test/123.mp3')
             ])
+            alice_post = Post(author_id=alice.id, title='Alice context post',
+                              content='context body', status='published')
+            db.session.add(alice_post)
             db.session.commit()
             alice_id, bob_id, charlie_id = alice.id, bob.id, charlie.id
+            alice_post_id = alice_post.id
 
         guest_profile = self.client.get(
             '/api/music/context?profile_user_id={}'.format(alice_id)).get_json()
@@ -648,6 +652,13 @@ class CommunityPlatformTest(unittest.TestCase):
         profile_html = self.client.get(
             '/user/{}'.format(alice_id)).get_data(as_text=True)
         self.assertIn('data-profile-user-id="{}"'.format(alice_id), profile_html)
+        own_profile_html = self.client.get(
+            '/user/{}'.format(bob_id)).get_data(as_text=True)
+        self.assertIn('data-profile-user-id=""', own_profile_html)
+        post_html = self.client.get(
+            '/post/{}'.format(alice_post_id)).get_data(as_text=True)
+        self.assertIn('data-post-author-id="{}"'.format(alice_id), post_html)
+        self.assertNotIn('data-post-id=', post_html)
         self.assertNotIn('new Audio()', profile_html)
         settings_html = self.client.get(
             '/settings/music').get_data(as_text=True)
@@ -657,6 +668,8 @@ class CommunityPlatformTest(unittest.TestCase):
         self.assertNotIn('progress.dragging', profile_html)
         self.assertIn('trackKey', profile_html)
         self.assertIn('sameTrack = sameSource && keyIndex >= 0', profile_html)
+        self.assertIn('rxMusicBrowseContext', profile_html)
+        self.assertIn('musicBrowseProfileUserId !== postAuthorId', profile_html)
         self.assertIn('function navigatePjax', profile_html)
         self.assertIn('function refreshMusicContext', profile_html)
         self.assertIn("window.addEventListener('popstate'", profile_html)
@@ -691,119 +704,27 @@ class CommunityPlatformTest(unittest.TestCase):
             self.assertEqual(track.audio_path, '')
             self.assertTrue(track.stream_url.endswith('1809646618.mp3'))
 
-    def test_post_music_priority_edit_delete_and_permissions(self):
-        alice_account, _ = self.register('Alice')
-        bob_account, _ = self.register('Bob')
-        charlie_account, _ = self.register('Charlie')
-        with app.app_context():
-            alice = User.query.filter_by(username=alice_account).one()
-            bob = User.query.filter_by(username=bob_account).one()
-            charlie = User.query.filter_by(username=charlie_account).one()
-            alice_one = UserMusicTrack(
-                user_id=alice.id, title='Alice One', artist='A',
-                audio_path='uploads/music/alice-one.mp3', source_type='upload')
-            alice_two = UserMusicTrack(
-                user_id=alice.id, title='Alice Two', artist='A',
-                audio_path='uploads/music/alice-two.mp3', source_type='upload')
-            bob_track = UserMusicTrack(
-                user_id=bob.id, title='Bob One', artist='B',
-                audio_path='uploads/music/bob-one.mp3', source_type='upload')
-            db.session.add_all([alice_one, alice_two, bob_track])
-            db.session.flush()
-            custom_post = Post(
-                author_id=alice.id, title='Custom music post', content='body',
-                status='published', music_track_id=alice_one.id)
-            author_fallback = Post(
-                author_id=alice.id, title='Author fallback', content='body',
-                status='published')
-            default_fallback = Post(
-                author_id=charlie.id, title='Default fallback', content='body',
-                status='published')
-            bob_post = Post(
-                author_id=bob.id, title='Admin managed', content='body',
-                status='published')
-            db.session.add_all([custom_post, author_fallback,
-                                default_fallback, bob_post])
-            db.session.commit()
-            ids = {
-                'custom': custom_post.id, 'author': author_fallback.id,
-                'default': default_fallback.id, 'bob_post': bob_post.id,
-                'alice_one': alice_one.id, 'alice_two': alice_two.id,
-                'bob_track': bob_track.id
-            }
-
-        custom_context = self.client.get(
-            '/api/music/context?post_id={}'.format(ids['custom'])).get_json()
-        self.assertEqual(custom_context['source_type'], 'post')
-        self.assertEqual(custom_context['playlist'][0]['id'], ids['alice_one'])
-        author_context = self.client.get(
-            '/api/music/context?post_id={}'.format(ids['author'])).get_json()
-        self.assertEqual(author_context['source_type'], 'author')
-        default_context = self.client.get(
-            '/api/music/context?post_id={}'.format(ids['default'])).get_json()
-        self.assertEqual(default_context['source_type'], 'default')
-
-        self.login(charlie_account)
-        self.assertEqual(self.client.get(
-            '/post/{}/edit'.format(ids['custom'])).status_code, 403)
-        self.logout()
-
-        self.login(alice_account)
-        replacement = self.client.post(
-            '/post/{}/edit'.format(ids['custom']), data={
-                'title': 'Custom music post', 'content': 'body', 'tags': '',
-                'music_track_id': str(ids['alice_two']), 'submit': '保存修改'
-            }, follow_redirects=False)
-        self.assertEqual(replacement.status_code, 302)
-        replaced_context = self.client.get(
-            '/api/music/context?post_id={}'.format(ids['custom'])).get_json()
-        self.assertEqual(replaced_context['playlist'][0]['id'],
-                         ids['alice_two'])
-
-        self.client.post('/settings/music', data={
-            'action': 'delete', 'track_id': str(ids['alice_two'])
-        }, follow_redirects=True)
-        with app.app_context():
-            self.assertIsNone(db.session.get(
-                Post, ids['custom']).music_track_id)
-        after_delete = self.client.get(
-            '/api/music/context?post_id={}'.format(ids['custom'])).get_json()
-        self.assertEqual(after_delete['source_type'], 'author')
-
-        admin_edit = self.client.post(
-            '/post/{}/edit'.format(ids['bob_post']), data={
-                'title': 'Admin managed', 'content': 'body', 'tags': '',
-                'music_track_id': str(ids['bob_track']), 'submit': '保存修改'
-            }, follow_redirects=False)
-        self.assertEqual(admin_edit.status_code, 302)
-        with app.app_context():
-            self.assertEqual(db.session.get(
-                Post, ids['bob_post']).music_track_id, ids['bob_track'])
-
-    def test_post_can_select_music_by_netease_id(self):
-        account, _ = self.register('Direct Music User')
+    def test_post_music_feature_is_removed(self):
+        account, _ = self.register('Plain Post User')
         self.login(account)
-        song = {
-            'id': '1809646618', 'title': 'Direct Song',
-            'artist': 'Cloud Artist',
-            'cover': 'https://example.test/direct.jpg',
-            'duration_ms': 123000,
-            'stream_url': ('https://music.163.com/song/media/outer/url'
-                           '?id=1809646618.mp3')
-        }
-        with patch('app.main.views.query_netease_song', return_value=song):
-            response = self.client.post('/post/new', data={
-                'title': 'Direct music post', 'content': 'body', 'tags': '',
-                'music_track_id': '0', 'netease_song_id': song['id'],
-                'submit': '发布博文'
-            }, follow_redirects=False)
-        self.assertEqual(response.status_code, 302)
+        editor = self.client.get('/post/new').get_data(as_text=True)
+        self.assertNotIn('博文背景音乐', editor)
+        self.assertNotIn('music_track_id', editor)
+        self.assertNotIn('netease_song_id', editor)
         with app.app_context():
-            post = Post.query.filter_by(title='Direct music post').one()
-            self.assertIsNotNone(post.music_track)
-            self.assertEqual(post.music_track.source_type, 'netease')
-            self.assertEqual(post.music_track.source_id, song['id'])
-            self.assertEqual(post.music_track.title, song['title'])
+            post_columns = {column['name'] for column in
+                            inspect(db.engine).get_columns('posts')}
+            self.assertNotIn('music_track_id', post_columns)
+            # Existing databases may retain the retired column. SQLAlchemy
+            # must continue to create and load posts while ignoring it.
+            db.session.execute(text(
+                'ALTER TABLE posts ADD COLUMN music_track_id INTEGER'))
+            user = User.query.filter_by(username=account).one()
+            db.session.add(Post(author_id=user.id, title='Legacy schema post',
+                                content='body', status='published'))
+            db.session.commit()
+            self.assertIsNotNone(Post.query.filter_by(
+                title='Legacy schema post').first())
 
 
 if __name__ == '__main__':

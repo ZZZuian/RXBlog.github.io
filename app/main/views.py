@@ -8,9 +8,7 @@ from sqlalchemy.orm import joinedload, selectinload
 from app.decorators import login_required
 from app.details import get_details
 from app.extensions import db
-from app.models import (Comment, Post, PostImage, PostLike, User,
-                        UserMusicTrack)
-from app.netease import NeteaseMusicError, query_netease_song
+from app.models import Comment, Post, PostImage, PostLike, User
 from app.parse import parse_input
 from app.taxonomy import category_meta, normalize_tags
 from app.time_utils import format_china_time
@@ -50,12 +48,6 @@ def _add_image_error(form, message):
     form.images.errors = errors
 
 
-def _add_music_error(form, message):
-    errors = list(form.netease_song_id.errors)
-    errors.append(message)
-    form.netease_song_id.errors = errors
-
-
 def _is_admin(user_id=None):
     user = db.session.get(User, user_id or session.get('user_id'))
     return bool(user and user.role == 'admin' and user.status == 'active')
@@ -63,58 +55,6 @@ def _is_admin(user_id=None):
 
 def _can_manage_post(post):
     return post.author_id == session.get('user_id') or _is_admin()
-
-
-def _music_choices(owner_id):
-    tracks = db.session.scalars(
-        select(UserMusicTrack).where(UserMusicTrack.user_id == owner_id)
-        .order_by(UserMusicTrack.sort_order, UserMusicTrack.id)
-    ).all()
-    choices = [(0, '不设置，自动使用作者主页音乐或默认音乐')]
-    for track in tracks:
-        source = '网易云' if track.source_type == 'netease' else '本地'
-        state = '' if track.is_enabled else '（已禁用，将自动回退）'
-        choices.append((track.id, '{} - {} [{}]{}'.format(
-            track.title, track.artist or '未知艺术家', source, state)))
-    return choices
-
-
-def _selected_music_track(track_id, owner_id):
-    if not track_id:
-        return None
-    track = db.session.get(UserMusicTrack, track_id)
-    if not track or track.user_id != owner_id:
-        abort(400)
-    return track
-
-
-def _post_music_track(form, owner_id):
-    """Resolve a direct NetEase ID first, then the saved-track selection."""
-    song_id = (form.netease_song_id.data or '').strip()
-    if not song_id:
-        return _selected_music_track(form.music_track_id.data, owner_id)
-
-    song = query_netease_song(song_id)
-    track = UserMusicTrack.query.filter_by(
-        user_id=owner_id, source_type='netease', source_id=song['id']
-    ).first()
-    if not track:
-        track = UserMusicTrack(
-            user_id=owner_id, title=song['title'], artist=song['artist'],
-            audio_path='', cover_path='', source_type='netease',
-            source_id=song['id'], stream_url=song['stream_url'],
-            cover_url=song['cover'], duration_ms=song['duration_ms'],
-            is_enabled=True)
-        db.session.add(track)
-    else:
-        track.title = song['title']
-        track.artist = song['artist']
-        track.stream_url = song['stream_url']
-        track.cover_url = song['cover']
-        track.duration_ms = song['duration_ms']
-        track.is_enabled = True
-    db.session.flush()
-    return track
 
 
 def _set_profile_pin(post, should_pin):
@@ -136,8 +76,7 @@ def _published_post(post_id):
         Post.id == post_id, Post.status == 'published')
         .options(
             joinedload(Post.author).joinedload(User.profile),
-            selectinload(Post.image_items).joinedload(PostImage.media),
-            joinedload(Post.music_track)
+            selectinload(Post.image_items).joinedload(PostImage.media)
         ))
 
 
@@ -244,17 +183,14 @@ def browse_all_entries():
 @login_required
 def create_post():
     form = PostForm()
-    form.music_track_id.choices = _music_choices(session['user_id'])
     if form.validate_on_submit():
         created_paths = []
         try:
             prepared = prepare_images(form.images.data or [])
-            music_track = _post_music_track(form, session['user_id'])
             post = Post(author_id=session['user_id'], title=form.title.data.strip(),
                         content=form.content.data.strip(), board='public',
                         category=form.category.data,
-                        tags=_parse_tags(form.tags.data), status='published',
-                        music_track_id=music_track.id if music_track else None)
+                        tags=_parse_tags(form.tags.data), status='published')
             db.session.add(post)
             db.session.flush()
             created_paths = store_images(post, session['user_id'], prepared)
@@ -265,10 +201,6 @@ def create_post():
             db.session.rollback()
             cleanup_paths(created_paths)
             _add_image_error(form, str(error))
-        except NeteaseMusicError as error:
-            db.session.rollback()
-            cleanup_paths(created_paths)
-            _add_music_error(form, str(error))
         except Exception:
             db.session.rollback()
             cleanup_paths(created_paths)
@@ -373,7 +305,7 @@ def view_post(post_id):
                            author_like_count=author_like_count,
                            author_comment_count=author_comment_count,
                            reading_minutes=reading_minutes,
-                           music_post_id=post.id)
+                           page_post_author_id=post.author_id)
 
 
 @main.route('/timestamp/<timestamp>')
@@ -398,7 +330,6 @@ def edit_post(post_id):
     if not _can_manage_post(post):
         abort(403)
     form = PostForm()
-    form.music_track_id.choices = _music_choices(post.author_id)
     if form.validate_on_submit():
         selected_ids = {int(value) for value in
                         request.form.getlist('remove_image_ids')
@@ -417,8 +348,6 @@ def edit_post(post_id):
             post.board = 'public'
             post.category = form.category.data
             post.tags = _parse_tags(form.tags.data)
-            music_track = _post_music_track(form, post.author_id)
-            post.music_track_id = music_track.id if music_track else None
             post.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
             for item in remove_items:
                 media = item.media
@@ -435,10 +364,6 @@ def edit_post(post_id):
             db.session.rollback()
             cleanup_paths(created_paths)
             _add_image_error(form, str(error))
-        except NeteaseMusicError as error:
-            db.session.rollback()
-            cleanup_paths(created_paths)
-            _add_music_error(form, str(error))
         except Exception:
             db.session.rollback()
             cleanup_paths(created_paths)
@@ -448,7 +373,6 @@ def edit_post(post_id):
         form.content.data = post.content
         form.category.data = post.category
         form.tags.data = ', '.join(post.tags or [])
-        form.music_track_id.data = post.music_track_id or 0
         form.submit.label.text = '保存修改'
     return render_template('post.html', form=form, post=post,
                            page_title='编辑博文', details=get_details())

@@ -74,11 +74,6 @@ class Post(db.Model):
     created_at = db.Column(db.DateTime, nullable=False, default=utcnow, index=True)
     updated_at = db.Column(db.DateTime, nullable=False, default=utcnow,
                            onupdate=utcnow)
-    music_track_id = db.Column(
-        db.Integer,
-        db.ForeignKey('user_music_tracks.id', ondelete='SET NULL'),
-        nullable=True, index=True)
-
     author = db.relationship('User', back_populates='posts')
     comments = db.relationship('Comment', back_populates='post',
                                cascade='all, delete-orphan')
@@ -87,9 +82,6 @@ class Post(db.Model):
     image_items = db.relationship('PostImage', back_populates='post',
                                   cascade='all, delete-orphan',
                                   order_by='PostImage.sort_order')
-    music_track = db.relationship('UserMusicTrack',
-                                  foreign_keys=[music_track_id])
-
     @property
     def likes_count(self):
         return self.legacy_likes + len(self.likes)

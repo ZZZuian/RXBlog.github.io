@@ -62,20 +62,6 @@ def migrate_music_sources_schema():
     return changed
 
 
-def migrate_post_music_schema():
-    """Add nullable post music reference without rebuilding existing posts."""
-    columns = {column['name'] for column in inspect(db.engine).get_columns('posts')}
-    if 'music_track_id' in columns:
-        return False
-    db.session.execute(text(
-        'ALTER TABLE posts ADD COLUMN music_track_id INTEGER NULL'))
-    db.session.execute(text(
-        'CREATE INDEX IF NOT EXISTS ix_posts_music_track_id '
-        'ON posts (music_track_id)'))
-    db.session.commit()
-    return True
-
-
 def migrate_post_taxonomy_schema():
     """Add post categories and consolidate the renamed interest tags."""
     columns = {column['name'] for column in inspect(db.engine).get_columns('posts')}

@@ -11,6 +11,7 @@ def enable_sqlite_foreign_keys(connection, connection_record):
     if isinstance(connection, sqlite3.Connection):
         cursor = connection.cursor()
         cursor.execute('PRAGMA foreign_keys=ON')
+        cursor.execute('PRAGMA busy_timeout=5000')
         cursor.close()
 
 

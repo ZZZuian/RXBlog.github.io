@@ -27,8 +27,8 @@
                     </div>
                     <div class="article-actions">
                         {% if session.logged_in %}
-                        <button class="btn article-action-btn js-post-like{% if liked %} liked{% endif %}" type="button" data-like-url="{{ url_for('main.like_post', post_id=post.id) }}" data-liked="{{ 'true' if liked else 'false' }}" aria-pressed="{{ 'true' if liked else 'false' }}" aria-label="{{ '取消点赞' if liked else '点赞' }}"><span class="like-glyph">{% if liked %}♥{% else %}♡{% endif %}</span> <span class="like-count">{{ post.likes_count }}</span></button>
-                        {% else %}<span class="btn article-action-btn">♡ {{ post.likes_count }}</span>{% endif %}
+                        <button class="btn article-action-btn js-post-like{% if liked %} liked{% endif %}" type="button" data-like-url="{{ url_for('main.like_post', post_id=post.id) }}" data-liked="{{ 'true' if liked else 'false' }}" aria-pressed="{{ 'true' if liked else 'false' }}" aria-label="{{ '取消点赞' if liked else '点赞' }}"><span class="like-glyph">{% if liked %}♥{% else %}♡{% endif %}</span> <span class="like-count">{{ post_like_count }}</span></button>
+                        {% else %}<span class="btn article-action-btn">♡ {{ post_like_count }}</span>{% endif %}
 
                         {% if session.user_id == post.author_id or is_admin %}
                         <a class="btn article-action-btn" href="{{ url_for('main.edit_post', post_id=post.id) }}">编辑记录</a>

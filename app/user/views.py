@@ -1,12 +1,13 @@
 from flask import abort, flash, jsonify, redirect, render_template, request, session, url_for
 from sqlalchemy import func, select
+from sqlalchemy.orm import joinedload, selectinload
 
 from app.decorators import login_required
 from app.auth.forms import DeactivateAccountForm
 from app.accounts import release_account
 from app.details import get_details
 from app.extensions import db
-from app.models import (Comment, GuestbookMessage, Post, PostLike,
+from app.models import (Comment, GuestbookMessage, Post, PostImage, PostLike,
                         User, UserMusicTrack)
 from app.netease import NeteaseMusicError, query_netease_song
 from app.taxonomy import CATEGORIES, CATEGORY_META
@@ -30,6 +31,10 @@ def view_user_profile(user_id):
     all_posts = db.session.scalars(
         select(Post).where(Post.author_id == user_id,
                            Post.status == 'published')
+        .options(
+            joinedload(Post.author).joinedload(User.profile),
+            selectinload(Post.image_items).joinedload(PostImage.media)
+        )
         .order_by(Post.created_at.desc(), Post.id.desc())
     ).all()
 
@@ -92,6 +97,8 @@ def view_user_profile(user_id):
         select(GuestbookMessage).where(
             GuestbookMessage.profile_user_id == user_id,
             GuestbookMessage.status == 'visible'
+        ).options(
+            joinedload(GuestbookMessage.author).joinedload(User.profile)
         ).order_by(GuestbookMessage.created_at.desc())
     ).all()
 
@@ -104,6 +111,25 @@ def view_user_profile(user_id):
             .group_by(Comment.post_id)
         )
         comment_counts = {pid: cnt for pid, cnt in rows}
+
+    like_rows = db.session.execute(
+        select(PostLike.post_id, func.count(PostLike.user_id))
+        .where(PostLike.post_id.in_([post.id for post in all_posts]))
+        .group_by(PostLike.post_id)
+    ) if all_posts else []
+    stored_like_counts = {post_id: count for post_id, count in like_rows}
+    like_counts = {
+        post.id: post.legacy_likes + stored_like_counts.get(post.id, 0)
+        for post in all_posts
+    }
+    liked_post_ids = set()
+    if session.get('user_id') and all_posts:
+        liked_post_ids = set(db.session.scalars(
+            select(PostLike.post_id).where(
+                PostLike.user_id == session['user_id'],
+                PostLike.post_id.in_([post.id for post in all_posts])
+            )
+        ).all())
 
     is_owner = session.get('logged_in') and session['user_id'] == user_id
     is_admin = False
@@ -127,6 +153,8 @@ def view_user_profile(user_id):
                            comment_count=comment_count,
                            guestbook_messages=guestbook_messages,
                            comment_counts=comment_counts,
+                           like_counts=like_counts,
+                           liked_post_ids=liked_post_ids,
                            is_owner=is_owner,
                            is_admin=is_admin,
                            music_profile_user_id=user_id,
@@ -422,7 +450,9 @@ def api_music_context():
     tracks = _enabled_music(profile_user_id)
     source = 'user:{}'.format(profile_user_id) if tracks else ''
 
-    if not tracks and session.get('logged_in'):
+    # A profile owns its playback context. If that profile has no enabled
+    # music, use the site default instead of leaking the visitor's playlist.
+    if not profile_user_id and not tracks and session.get('logged_in'):
         current_user_id = session.get('user_id')
         tracks = _enabled_music(current_user_id)
         source = 'user:{}'.format(current_user_id) if tracks else ''

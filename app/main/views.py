@@ -3,11 +3,14 @@ from datetime import datetime, timedelta, timezone
 from flask import (abort, flash, jsonify, redirect, render_template, request,
                    session, url_for)
 from sqlalchemy import func, select
+from sqlalchemy.orm import joinedload, selectinload
 
 from app.decorators import login_required
 from app.details import get_details
 from app.extensions import db
-from app.models import Comment, Post, PostLike, User, UserMusicTrack
+from app.models import (Comment, Post, PostImage, PostLike, User,
+                        UserMusicTrack)
+from app.netease import NeteaseMusicError, query_netease_song
 from app.parse import parse_input
 from app.taxonomy import category_meta, normalize_tags
 from app.time_utils import format_china_time
@@ -23,14 +26,8 @@ PER_PAGE = 10
 
 @main.app_context_processor
 def inject_liked_post_ids():
-    """Expose the signed-in user's likes to every post-card template."""
-    user_id = session.get('user_id')
-    if not user_id:
-        return {'liked_post_ids': set()}
-    post_ids = db.session.scalars(
-        select(PostLike.post_id).where(PostLike.user_id == user_id)
-    ).all()
-    return {'liked_post_ids': set(post_ids)}
+    """Keep post-card includes safe outside the feed views."""
+    return {'liked_post_ids': set()}
 
 
 @main.app_context_processor
@@ -51,6 +48,12 @@ def _add_image_error(form, message):
     errors = list(form.images.errors)
     errors.append(message)
     form.images.errors = errors
+
+
+def _add_music_error(form, message):
+    errors = list(form.netease_song_id.errors)
+    errors.append(message)
+    form.netease_song_id.errors = errors
 
 
 def _is_admin(user_id=None):
@@ -85,6 +88,35 @@ def _selected_music_track(track_id, owner_id):
     return track
 
 
+def _post_music_track(form, owner_id):
+    """Resolve a direct NetEase ID first, then the saved-track selection."""
+    song_id = (form.netease_song_id.data or '').strip()
+    if not song_id:
+        return _selected_music_track(form.music_track_id.data, owner_id)
+
+    song = query_netease_song(song_id)
+    track = UserMusicTrack.query.filter_by(
+        user_id=owner_id, source_type='netease', source_id=song['id']
+    ).first()
+    if not track:
+        track = UserMusicTrack(
+            user_id=owner_id, title=song['title'], artist=song['artist'],
+            audio_path='', cover_path='', source_type='netease',
+            source_id=song['id'], stream_url=song['stream_url'],
+            cover_url=song['cover'], duration_ms=song['duration_ms'],
+            is_enabled=True)
+        db.session.add(track)
+    else:
+        track.title = song['title']
+        track.artist = song['artist']
+        track.stream_url = song['stream_url']
+        track.cover_url = song['cover']
+        track.duration_ms = song['duration_ms']
+        track.is_enabled = True
+    db.session.flush()
+    return track
+
+
 def _set_profile_pin(post, should_pin):
     """Keep at most one published profile pin for each author."""
     post.is_pinned = bool(should_pin)
@@ -101,7 +133,12 @@ def _set_profile_pin(post, should_pin):
 
 def _published_post(post_id):
     return db.session.scalar(select(Post).where(
-        Post.id == post_id, Post.status == 'published'))
+        Post.id == post_id, Post.status == 'published')
+        .options(
+            joinedload(Post.author).joinedload(User.profile),
+            selectinload(Post.image_items).joinedload(PostImage.media),
+            joinedload(Post.music_track)
+        ))
 
 
 def _post_by_timestamp(timestamp):
@@ -135,11 +172,49 @@ def _comment_counts(post_ids):
     return {post_id: count for post_id, count in rows}
 
 
+def _like_counts(posts):
+    """Return like totals in one query instead of loading each like collection."""
+    if not posts:
+        return {}
+    post_ids = [post.id for post in posts]
+    rows = db.session.execute(
+        select(PostLike.post_id, func.count(PostLike.user_id))
+        .where(PostLike.post_id.in_(post_ids))
+        .group_by(PostLike.post_id)
+    )
+    stored_counts = {post_id: count for post_id, count in rows}
+    return {post.id: post.legacy_likes + stored_counts.get(post.id, 0)
+            for post in posts}
+
+
+def _liked_post_ids(post_ids):
+    user_id = session.get('user_id')
+    if not user_id or not post_ids:
+        return set()
+    return set(db.session.scalars(
+        select(PostLike.post_id).where(
+            PostLike.user_id == user_id,
+            PostLike.post_id.in_(post_ids)
+        )
+    ).all())
+
+
+def _post_card_options():
+    """Relationships used by every post card, loaded in bounded queries."""
+    return (
+        joinedload(Post.author).joinedload(User.profile),
+        selectinload(Post.image_items).joinedload(PostImage.media),
+    )
+
+
 def _render_feed(template, page, **context):
     posts = page.items
+    post_ids = [post.id for post in posts]
     context.update(
         entries_for_page=posts,
-        comment_counts=_comment_counts([post.id for post in posts]),
+        comment_counts=_comment_counts(post_ids),
+        like_counts=_like_counts(posts),
+        liked_post_ids=_liked_post_ids(post_ids),
         next_page=page.next_num if page.has_next else None,
         prev_page=page.prev_num if page.has_prev else None,
         details=get_details()
@@ -158,6 +233,7 @@ def browse_all_entries():
             return parse_input(form.raw_entry.data, datetime.now(timezone.utc))
     page_number = request.args.get('page', 1, type=int)
     statement = (select(Post).where(Post.status == 'published')
+                 .options(*_post_card_options())
                  .order_by(Post.created_at.desc(), Post.id.desc()))
     page = db.paginate(statement, page=page_number, per_page=PER_PAGE,
                        error_out=False)
@@ -173,8 +249,7 @@ def create_post():
         created_paths = []
         try:
             prepared = prepare_images(form.images.data or [])
-            music_track = _selected_music_track(
-                form.music_track_id.data, session['user_id'])
+            music_track = _post_music_track(form, session['user_id'])
             post = Post(author_id=session['user_id'], title=form.title.data.strip(),
                         content=form.content.data.strip(), board='public',
                         category=form.category.data,
@@ -190,6 +265,10 @@ def create_post():
             db.session.rollback()
             cleanup_paths(created_paths)
             _add_image_error(form, str(error))
+        except NeteaseMusicError as error:
+            db.session.rollback()
+            cleanup_paths(created_paths)
+            _add_music_error(form, str(error))
         except Exception:
             db.session.rollback()
             cleanup_paths(created_paths)
@@ -209,6 +288,7 @@ def view_entries_for_page(page):
         if form.validate_on_submit():
             return parse_input(form.raw_entry.data, datetime.now(timezone.utc))
     statement = (select(Post).where(Post.status == 'published')
+                 .options(*_post_card_options())
                  .order_by(Post.created_at.desc(), Post.id.desc()))
     pagination = db.paginate(statement, page=page, per_page=PER_PAGE,
                              error_out=False)
@@ -223,13 +303,16 @@ def view_entries_for_day(day):
         select(Post).where(Post.status == 'published',
                            func.date(func.datetime(
                                Post.created_at, '+8 hours')) == day)
+        .options(*_post_card_options())
         .order_by(Post.created_at.asc(), Post.id.asc())
     ).all()
     if not posts:
         abort(404)
     return render_template('day.html', entries_for_day=posts, day=day,
                            details=get_details(),
-                           comment_counts=_comment_counts([p.id for p in posts]))
+                           comment_counts=_comment_counts([p.id for p in posts]),
+                           like_counts=_like_counts(posts),
+                           liked_post_ids=_liked_post_ids([p.id for p in posts]))
 
 
 @main.route('/post/<int:post_id>', methods=['GET', 'POST'])
@@ -251,6 +334,7 @@ def view_post(post_id):
     comments = db.session.scalars(
         select(Comment).where(Comment.post_id == post.id,
                               Comment.status == 'visible')
+        .options(joinedload(Comment.author).joinedload(User.profile))
         .order_by(Comment.created_at.asc(), Comment.id.asc())
     ).all()
     liked = bool(session.get('user_id') and db.session.get(
@@ -283,6 +367,7 @@ def view_post(post_id):
                            comment_form=comment_form,
                            delete_form=DeleteEntryForm(),
                            pin_form=PinPostForm(), liked=liked,
+                           post_like_count=_like_counts([post])[post.id],
                            is_admin=is_admin,
                            author_post_count=author_post_count,
                            author_like_count=author_like_count,
@@ -332,8 +417,7 @@ def edit_post(post_id):
             post.board = 'public'
             post.category = form.category.data
             post.tags = _parse_tags(form.tags.data)
-            music_track = _selected_music_track(
-                form.music_track_id.data, post.author_id)
+            music_track = _post_music_track(form, post.author_id)
             post.music_track_id = music_track.id if music_track else None
             post.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
             for item in remove_items:
@@ -351,6 +435,10 @@ def edit_post(post_id):
             db.session.rollback()
             cleanup_paths(created_paths)
             _add_image_error(form, str(error))
+        except NeteaseMusicError as error:
+            db.session.rollback()
+            cleanup_paths(created_paths)
+            _add_music_error(form, str(error))
         except Exception:
             db.session.rollback()
             cleanup_paths(created_paths)
@@ -433,6 +521,7 @@ def search_posts():
     search_pattern = f'%{query}%'
     statement = (
         select(Post)
+        .options(*_post_card_options())
         .where(
             Post.status == 'published',
             db.or_(
@@ -477,6 +566,7 @@ def view_all_days():
 def view_entries_for_tag(tag):
     posts = db.session.scalars(
         select(Post).where(Post.status == 'published')
+        .options(*_post_card_options())
         .order_by(Post.created_at.desc(), Post.id.desc())
     ).all()
     posts = [post for post in posts if tag in (post.tags or [])]
@@ -484,7 +574,9 @@ def view_entries_for_tag(tag):
         abort(404)
     return render_template('tag.html', entries_for_tag=posts, tag=tag,
                            details=get_details(),
-                           comment_counts=_comment_counts([p.id for p in posts]))
+                           comment_counts=_comment_counts([p.id for p in posts]),
+                           like_counts=_like_counts(posts),
+                           liked_post_ids=_liked_post_ids([p.id for p in posts]))
 
 
 @main.route('/api/like/<int:post_id>', methods=['POST'])
@@ -505,7 +597,10 @@ def like_post(post_id):
             db.session.add(PostLike(user_id=session['user_id'], post_id=post.id))
         liked = True
     db.session.commit()
-    return jsonify({'likes': post.likes_count, 'liked': liked})
+    like_count = post.legacy_likes + (db.session.scalar(
+        select(func.count(PostLike.user_id)).where(
+            PostLike.post_id == post.id)) or 0)
+    return jsonify({'likes': like_count, 'liked': liked})
 
 
 @main.route('/api/like/<timestamp>', methods=['POST'])

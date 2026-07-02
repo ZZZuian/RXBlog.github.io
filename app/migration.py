@@ -20,6 +20,25 @@ POST_TAXONOMY_MIGRATION = 'entertainment_post_taxonomy_v1'
 LEGACY_TIMEZONE_MIGRATION = 'legacy_china_times_to_utc_v1'
 
 
+def ensure_performance_indexes():
+    """Create additive indexes for the application's hottest read paths."""
+    statements = (
+        'CREATE INDEX IF NOT EXISTS ix_posts_status_created_id '
+        'ON posts (status, created_at DESC, id DESC)',
+        'CREATE INDEX IF NOT EXISTS ix_posts_author_status_created_id '
+        'ON posts (author_id, status, created_at DESC, id DESC)',
+        'CREATE INDEX IF NOT EXISTS ix_comments_post_status '
+        'ON comments (post_id, status)',
+        'CREATE INDEX IF NOT EXISTS ix_post_likes_post_id '
+        'ON post_likes (post_id)',
+        'CREATE INDEX IF NOT EXISTS ix_guestbook_profile_status_created '
+        'ON guestbook_messages (profile_user_id, status, created_at DESC)',
+    )
+    for statement in statements:
+        db.session.execute(text(statement))
+    db.session.commit()
+
+
 def migrate_music_sources_schema():
     """Add remote music source columns to an existing SQLite database."""
     columns = {column['name'] for column in

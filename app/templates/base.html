@@ -360,7 +360,9 @@
         var keyIndex = playlist.findIndex(function(track) {
             return (track.key || String(track.id)) === state.trackKey;
         });
-        var sameTrack = keyIndex >= 0;
+        // A post and a profile can reference the same track, but they are
+        // different playback contexts. Only resume a track inside its source.
+        var sameTrack = sameSource && keyIndex >= 0;
         var index = sameTrack ? keyIndex :
                     (sameSource && Number(state.index) < playlist.length ?
                      Number(state.index) : 0);

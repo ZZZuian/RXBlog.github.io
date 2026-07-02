@@ -20,7 +20,8 @@ app.config.update(
     MAX_IMAGE_SIZE=5 * 1024 * 1024,
     MAX_POST_IMAGES=9,
     DEFAULT_NAME='RXBlog',
-    DEFAULT_AUTHOR='Chronologist'
+    DEFAULT_AUTHOR='Chronologist',
+    SEND_FILE_MAX_AGE_DEFAULT=3600
 )
 
 db.init_app(app)
@@ -28,7 +29,8 @@ csrf.init_app(app)
 bootstrap = Bootstrap(app)
 
 with app.app_context():
-    from .migration import (migrate_single_community,
+    from .migration import (ensure_performance_indexes,
+                            migrate_single_community,
                             migrate_deactivated_identities,
                             migrate_legacy_times_to_utc,
                             migrate_music_sources_schema,
@@ -46,6 +48,7 @@ with app.app_context():
     migrate_single_community()
     migrate_single_file_static_paths()
     migrate_deactivated_identities()
+    ensure_performance_indexes()
 
 from app.admin import admin
 from app.auth import auth

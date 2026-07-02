@@ -642,7 +642,8 @@ class CommunityPlatformTest(unittest.TestCase):
         self.assertEqual(other_profile['source'], 'user:{}'.format(alice_id))
         no_music_profile = self.client.get(
             '/api/music/context?profile_user_id={}'.format(charlie_id)).get_json()
-        self.assertEqual(no_music_profile['source'], 'user:{}'.format(bob_id))
+        self.assertEqual(no_music_profile['source'], 'default')
+        self.assertEqual(no_music_profile['source_type'], 'default')
 
         profile_html = self.client.get(
             '/user/{}'.format(alice_id)).get_data(as_text=True)
@@ -655,6 +656,7 @@ class CommunityPlatformTest(unittest.TestCase):
         self.assertIn('effectiveDuration()', profile_html)
         self.assertNotIn('progress.dragging', profile_html)
         self.assertIn('trackKey', profile_html)
+        self.assertIn('sameTrack = sameSource && keyIndex >= 0', profile_html)
         self.assertIn('function navigatePjax', profile_html)
         self.assertIn('function refreshMusicContext', profile_html)
         self.assertIn("window.addEventListener('popstate'", profile_html)
@@ -777,6 +779,31 @@ class CommunityPlatformTest(unittest.TestCase):
         with app.app_context():
             self.assertEqual(db.session.get(
                 Post, ids['bob_post']).music_track_id, ids['bob_track'])
+
+    def test_post_can_select_music_by_netease_id(self):
+        account, _ = self.register('Direct Music User')
+        self.login(account)
+        song = {
+            'id': '1809646618', 'title': 'Direct Song',
+            'artist': 'Cloud Artist',
+            'cover': 'https://example.test/direct.jpg',
+            'duration_ms': 123000,
+            'stream_url': ('https://music.163.com/song/media/outer/url'
+                           '?id=1809646618.mp3')
+        }
+        with patch('app.main.views.query_netease_song', return_value=song):
+            response = self.client.post('/post/new', data={
+                'title': 'Direct music post', 'content': 'body', 'tags': '',
+                'music_track_id': '0', 'netease_song_id': song['id'],
+                'submit': '发布博文'
+            }, follow_redirects=False)
+        self.assertEqual(response.status_code, 302)
+        with app.app_context():
+            post = Post.query.filter_by(title='Direct music post').one()
+            self.assertIsNotNone(post.music_track)
+            self.assertEqual(post.music_track.source_type, 'netease')
+            self.assertEqual(post.music_track.source_id, song['id'])
+            self.assertEqual(post.music_track.title, song['title'])
 
 
 if __name__ == '__main__':

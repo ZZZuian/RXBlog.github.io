@@ -17,12 +17,12 @@
                 {% if session.logged_in %}
                 {% set card_liked = post.id in liked_post_ids %}
                 <button class="like-btn post-card-like js-post-like{% if card_liked %} liked{% endif %}" type="button" data-like-url="{{ url_for('main.like_post', post_id=post.id) }}" data-liked="{{ 'true' if card_liked else 'false' }}" aria-pressed="{{ 'true' if card_liked else 'false' }}" aria-label="{{ '取消点赞' if card_liked else '点赞' }}">
-                    <span class="like-glyph">{{ '♥' if card_liked else '♡' }}</span><span class="like-count">{{ post.likes_count }}</span>
+                    <span class="like-glyph">{{ '♥' if card_liked else '♡' }}</span><span class="like-count">{{ like_counts.get(post.id, post.legacy_likes) }}</span>
                 </button>
                 {% else %}
-                <span>♡ {{ post.likes_count }}</span>
+                <span>♡ {{ like_counts.get(post.id, post.legacy_likes) }}</span>
                 {% endif %}
-                <a href="{{ url_for('main.view_post', post_id=post.id) }}">评论 {{ comment_counts.get(post.id, post.comments|length) }}</a>
+                <a href="{{ url_for('main.view_post', post_id=post.id) }}">评论 {{ comment_counts.get(post.id, 0) }}</a>
             </span>
         </div>
     </div>

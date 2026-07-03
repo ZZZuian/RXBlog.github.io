@@ -23,7 +23,17 @@ app.config.update(
     MAX_POST_VIDEOS=1,
     DEFAULT_NAME='RXBlog',
     DEFAULT_AUTHOR='Chronologist',
-    SEND_FILE_MAX_AGE_DEFAULT=3600
+    SEND_FILE_MAX_AGE_DEFAULT=3600,
+    AI_COMMENT_ENABLED=os.environ.get('AI_COMMENT_ENABLED', 'true').lower()
+                       in ('1', 'true', 'yes', 'on'),
+    AI_COMMENT_PROBABILITY=float(os.environ.get('AI_COMMENT_PROBABILITY', '0.4')),
+    AI_API_KEY=os.environ.get('AI_API_KEY', ''),
+    AI_BASE_URL=os.environ.get('AI_BASE_URL', 'https://api.openai.com/v1'),
+    AI_MODEL=os.environ.get('AI_MODEL', 'gpt-4o-mini'),
+    AI_REQUEST_TIMEOUT=float(os.environ.get('AI_REQUEST_TIMEOUT', '12')),
+    AI_COMMENT_MAX_ATTEMPTS=int(os.environ.get('AI_COMMENT_MAX_ATTEMPTS', '2')),
+    AI_COMMENT_USER_DAILY_LIMIT=int(os.environ.get('AI_COMMENT_USER_DAILY_LIMIT', '10')),
+    AI_COMMENT_GLOBAL_MINUTE_LIMIT=int(os.environ.get('AI_COMMENT_GLOBAL_MINUTE_LIMIT', '20'))
 )
 
 db.init_app(app)
@@ -31,15 +41,18 @@ csrf.init_app(app)
 bootstrap = Bootstrap(app)
 
 with app.app_context():
-    from .migration import (ensure_performance_indexes,
+    from .migration import (ensure_ai_bot, ensure_performance_indexes,
+                            migrate_ai_legacy_posts,
                             migrate_single_community,
                             migrate_deactivated_identities,
                             migrate_legacy_times_to_utc,
                             migrate_music_sources_schema,
                             migrate_post_pin_schema,
                             migrate_post_taxonomy_schema,
-                            migrate_single_file_static_paths, migrate_tinydb)
+                            migrate_single_file_static_paths, migrate_tinydb,
+                            migrate_ai_comment_schema)
     db.create_all()
+    migrate_ai_comment_schema()
     migrate_music_sources_schema()
     migrate_post_pin_schema()
     migrate_tinydb()
@@ -48,6 +61,8 @@ with app.app_context():
     migrate_single_community()
     migrate_single_file_static_paths()
     migrate_deactivated_identities()
+    migrate_ai_legacy_posts()
+    ensure_ai_bot()
     ensure_performance_indexes()
 
 from app.admin import admin

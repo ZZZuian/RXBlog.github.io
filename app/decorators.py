@@ -14,7 +14,7 @@ def login_required(view):
         if not session.get('logged_in') or not user:
             flash('请先登录。')
             return redirect(url_for('auth.login', next=request.url))
-        if user.status != 'active':
+        if user.status != 'active' or user.is_bot:
             session.clear()
             abort(403)
         return view(*args, **kwargs)

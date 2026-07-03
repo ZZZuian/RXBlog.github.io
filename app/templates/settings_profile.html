@@ -49,6 +49,11 @@
                 <p class="help-text">建议尺寸 1920x1080，支持 jpg、png、webp</p>
             </div>
 
+            <div class="form-group">
+                <label class="ai-comment-setting"><input type="checkbox" name="allow_ai_comments"{% if profile.user.allow_ai_comments %} checked{% endif %}> <span>允许“评论特伯罗”评论我的新帖子</span></label>
+                <p class="help-text">关闭后，新发布的帖子不会自动请求 AI 评论；已有帖子的设置保持不变。</p>
+            </div>
+
             <div class="settings-form-actions">
                 <button type="submit" class="btn btn-primary">保存修改</button>
                 <a href="{{ url_for('user.settings_music') }}" class="btn btn-default">设置主页音乐</a>

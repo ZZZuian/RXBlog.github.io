@@ -177,6 +177,8 @@ def settings_profile():
 
         profile.nickname = nickname
         profile.bio = bio[:500]
+        current_user.allow_ai_comments = (
+            request.form.get('allow_ai_comments') == 'on')
 
         try:
             avatar_file = request.files.get('avatar')

@@ -83,7 +83,7 @@
                 <img src="" alt="放大的博文图片">
             </div>
 
-            <section class="comment-section article-comments">
+            <section class="comment-section article-comments"{% if session.user_id == post.author_id and ai_comments_enabled and post.allow_ai_comment and post.ai_comment_status == 'none' %} data-ai-generate-url="{{ url_for('main.generate_ai_comment', post_id=post.id) }}"{% endif %}>
                 <h3 id="commentCount" data-count="{{ comments|length }}">评论 {{ comments|length }}</h3>
                 <div class="comment-list" id="commentList">
                 {% for comment in comments %}
@@ -93,7 +93,7 @@
                             <img src="{{ url_for('static', filename=comment.author.profile.avatar if comment.author and comment.author.status == 'active' and comment.author.profile and comment.author.profile.avatar else 'images/default-avatar.jpg') }}" alt="{{ comment.nickname }}" class="comment-avatar">
                         </div>
                         <div class="comment-meta">
-                            {% if comment.author and comment.author.status == 'active' %}<a href="{{ url_for('user.view_user_profile', user_id=comment.author_id) }}" class="comment-author-link comment-nickname">{{ comment.nickname }}</a>{% else %}<span class="comment-nickname{% if comment.author %} deactivated-user{% endif %}">{{ comment.nickname }}</span>{% endif %}
+                            {% if comment.author and comment.author.status == 'active' %}<a href="{{ url_for('user.view_user_profile', user_id=comment.author_id) }}" class="comment-author-link comment-nickname">{{ comment.nickname }}</a>{% else %}<span class="comment-nickname{% if comment.author %} deactivated-user{% endif %}">{{ comment.nickname }}</span>{% endif %}{% if comment.is_ai_generated or (comment.author and comment.author.is_bot) %}<span class="ai-bot-badge" title="内容由AI生成">AI机器人</span>{% endif %}
                             <span class="comment-time">{{ comment.created_at|localtime }}</span>
                         </div>
                         {% if session.user_id == comment.author_id or is_admin %}<form method="post" action="{{ url_for('main.delete_comment', comment_id=comment.id) }}" class="comment-delete-form">{{ delete_form.hidden_tag() }}<button type="submit" class="comment-delete-btn" title="删除评论" onclick="return confirm('确定删除这条评论吗？');">×</button></form>{% endif %}
@@ -102,6 +102,7 @@
                 </div>
                 {% endfor %}
                 </div>
+                <p class="ai-comment-status" aria-live="polite"></p>
                 {% if session.logged_in %}
                 <div class="comment-form"><form class="js-comment-form" method="post" action="{{ url_for('main.view_post', post_id=post.id) }}" data-api-url="{{ url_for('main.api_add_comment', post_id=post.id) }}">{{ comment_form.hidden_tag() }}<div class="form-group">{{ comment_form.content(class_='form-control', rows=3, maxlength=500, placeholder='写下你的评论……') }}</div>{{ comment_form.submit(class_='btn btn-primary') }}<span class="comment-submit-status" aria-live="polite"></span></form></div>
                 {% else %}<p class="login-hint"><a href="{{ url_for('auth.login', next=request.url) }}">登录</a>后参与评论。</p>{% endif %}

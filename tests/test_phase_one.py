@@ -22,10 +22,13 @@ from PIL import Image
 
 from app import app
 from app.extensions import db
-from app.migration import migrate_legacy_times_to_utc, migrate_tinydb
-from app.models import (Comment, Media, MigrationState, Post, PostImage,
+from app.migration import (AI_BOT_USERNAME, ensure_ai_bot,
+                           migrate_legacy_times_to_utc, migrate_tinydb)
+from app.models import (AICommentAttempt, Comment, Media, MigrationState, Post, PostImage,
                         PostLike, Profile, SiteSetting, User, UserMusicTrack)
 from app.netease import NeteaseMusicError, query_netease_song
+from app.services.ai_comment_service import (AICommentError,
+                                             AICommentService)
 from app.time_utils import format_china_time
 
 
@@ -813,6 +816,146 @@ class CommunityPlatformTest(unittest.TestCase):
             db.session.commit()
             self.assertIsNotNone(Post.query.filter_by(
                 title='Legacy schema post').first())
+
+    def test_ai_bot_is_idempotent_non_login_account(self):
+        with app.app_context():
+            first = ensure_ai_bot()
+            first_id = first.id
+            second = ensure_ai_bot()
+            self.assertEqual(first_id, second.id)
+            self.assertEqual(User.query.filter_by(
+                username=AI_BOT_USERNAME).count(), 1)
+            self.assertTrue(second.is_bot)
+            self.assertEqual(second.profile.nickname, AI_BOT_USERNAME)
+
+        human_account, _ = self.register('First Human')
+        with app.app_context():
+            self.assertEqual(User.query.filter_by(
+                username=human_account).one().role, 'admin')
+        login = self.client.post('/admin/login', data={
+            'account': AI_BOT_USERNAME, 'password': 'Anything1!',
+            'submit': '登录'}, follow_redirects=True)
+        self.assertIn('账号不存在', login.get_data(as_text=True))
+        with self.client.session_transaction() as login_session:
+            self.assertNotIn('user_id', login_session)
+
+    def test_ai_comment_rules_validation_and_generation_deduplication(self):
+        service = AICommentService()
+        short_post = Post(title='hi', content='...', category='daily')
+        self.assertFalse(service.should_comment(short_post)['should_comment'])
+        crisis_post = Post(title='求助', content='我有自残和轻生的想法',
+                           category='daily')
+        self.assertEqual(service.should_comment(crisis_post)['tone'], 'skip')
+        work_post = Post(title='新作品', content='今天完成了摄影作品，分享一下',
+                         category='creative')
+        self.assertEqual(service.should_comment(work_post)['tone'], 'encouraging')
+        self.assertEqual(service.validate_generated_comment(
+            '<b>这个构图很有故事感，继续拍！</b>'),
+            '这个构图很有故事感，继续拍！')
+        self.assertIsNone(service.validate_generated_comment('SKIP_COMMENT'))
+        with self.assertRaises(AICommentError):
+            service.validate_generated_comment('x' * 81)
+        with self.assertRaises(AICommentError) as incomplete:
+            service.validate_generated_comment('正版特伯罗在此，盗版同学先交')
+        self.assertEqual(incomplete.exception.code, 'incomplete_sentence')
+        with patch.object(service, '_request', side_effect=[
+                '正版特伯罗在此，盗版同学先交',
+                '正版特伯罗在此，盗版同学先交一下版权费。']) as request_ai:
+            with app.app_context():
+                retried = service.generate_post_comment(work_post)
+        self.assertEqual(retried, '正版特伯罗在此，盗版同学先交一下版权费。')
+        self.assertEqual(request_ai.call_count, 2)
+
+        account, _ = self.register('AI Post Author')
+        self.login(account)
+        self.publish('生活吐槽', '今天发生了一件很离谱但又好笑的事情。')
+        with app.app_context():
+            post = Post.query.filter_by(title='生活吐槽').one()
+            post_id = post.id
+        app.config['AI_COMMENT_PROBABILITY'] = 1.0
+        try:
+            with patch.object(AICommentService, 'generate_post_comment',
+                              return_value='这剧情拐弯太快，生活编剧今天超常发挥。') as generate:
+                response = self.client.post(
+                    '/api/ai-comments/posts/{}/generate'.format(post_id),
+                    json={})
+                self.assertEqual(response.status_code, 201)
+                self.assertEqual(response.get_json()['status'], 'generated')
+                duplicate = self.client.post(
+                    '/api/ai-comments/posts/{}/generate'.format(post_id),
+                    json={})
+                self.assertEqual(duplicate.status_code, 200)
+                self.assertEqual(generate.call_count, 1)
+            with patch.object(AICommentService, 'generate_post_comment',
+                              return_value='重新生成后，这次是一句完整评论。'):
+                regenerated = self.client.post(
+                    '/api/ai-comments/posts/{}/generate'.format(post_id),
+                    json={'force': True})
+                self.assertEqual(regenerated.status_code, 201)
+                self.assertEqual(regenerated.get_json()['comment']['content'],
+                                 '重新生成后，这次是一句完整评论。')
+            with app.app_context():
+                bot_comment = Comment.query.filter_by(
+                    post_id=post_id, is_ai_generated=True,
+                    status='deleted').one()
+                visible_bot_comment = Comment.query.filter_by(
+                    post_id=post_id, is_ai_generated=True,
+                    status='visible').one()
+                self.assertTrue(visible_bot_comment.author.is_bot)
+                self.assertEqual(Comment.query.filter_by(
+                    post_id=post_id, is_ai_generated=True).count(), 2)
+                self.assertEqual(bot_comment.status, 'deleted')
+                self.assertEqual(db.session.get(Post, post_id).ai_comment_status,
+                                 'generated')
+                self.assertEqual(AICommentAttempt.query.count(), 2)
+            page = self.client.get('/post/{}'.format(post_id)).get_data(
+                as_text=True)
+            self.assertIn('AI机器人', page)
+            self.assertIn('comment-teboluo-avatar.svg', page)
+        finally:
+            app.config['AI_COMMENT_PROBABILITY'] = 0.4
+
+    def test_ai_failure_opt_out_and_client_forgery_are_safe(self):
+        account, _ = self.register('Opt Out User')
+        self.login(account)
+        profile_update = self.client.post('/settings/profile', data={
+            'nickname': 'Opt Out User', 'bio': 'No bot please'},
+            follow_redirects=True)
+        self.assertEqual(profile_update.status_code, 200)
+        self.publish('不启用AI', '这是一篇正常且足够长的新帖子。')
+        with app.app_context():
+            post = Post.query.filter_by(title='不启用AI').one()
+            self.assertFalse(post.allow_ai_comment)
+            post_id = post.id
+        disabled = self.client.post(
+            '/api/ai-comments/posts/{}/generate'.format(post_id), json={})
+        self.assertEqual(disabled.status_code, 403)
+
+        forged = self.client.post('/api/post/{}/comments'.format(post_id),
+                                  json={'content': '普通用户评论',
+                                        'is_ai_generated': True,
+                                        'author_id': 999999})
+        self.assertEqual(forged.status_code, 201)
+        with app.app_context():
+            comment = Comment.query.filter_by(content='普通用户评论').one()
+            self.assertFalse(comment.is_ai_generated)
+            self.assertEqual(comment.author.username, account)
+
+        with app.app_context():
+            post = db.session.get(Post, post_id)
+            post.allow_ai_comment = True
+            db.session.commit()
+        app.config.update(AI_COMMENT_PROBABILITY=1.0, AI_API_KEY='')
+        failed = self.client.post(
+            '/api/ai-comments/posts/{}/generate'.format(post_id), json={})
+        self.assertEqual(failed.status_code, 503)
+        with app.app_context():
+            self.assertEqual(db.session.get(Post, post_id).ai_comment_status,
+                             'failed')
+            self.assertIsNotNone(Post.query.filter_by(title='不启用AI').first())
+            self.assertIsNotNone(Comment.query.filter_by(
+                content='普通用户评论').first())
+        app.config.update(AI_COMMENT_PROBABILITY=0.4, AI_API_KEY='')
 
 
 if __name__ == '__main__':

@@ -23,7 +23,7 @@ def _safe_next_url(target):
 @auth.route('/login', methods=['GET', 'POST'])
 def login():
     details = get_details()
-    if not User.query.first():
+    if not User.query.filter(User.is_bot.is_(False)).first():
         flash('您需要先注册。')
         return redirect(url_for('auth.register'))
     if session.get('logged_in'):
@@ -31,6 +31,9 @@ def login():
     form = LoginForm()
     if form.validate_on_submit():
         user = User.query.filter_by(username=form.account.data).first()
+        if user.is_bot:
+            flash('机器人账号不能登录前台。')
+            return render_template('login.html', form=form, details=details), 403
         if user.status != 'active':
             flash('该账号已被停用。')
             return render_template('login.html', form=form, details=details), 403
@@ -57,7 +60,8 @@ def register():
     details = get_details()
     form = RegistrationForm()
     if form.validate_on_submit():
-        role = 'admin' if User.query.count() == 0 else 'user'
+        role = ('admin' if not User.query.filter(
+            User.is_bot.is_(False)).first() else 'user')
         account = allocate_account()
         user = User(username=account,
                     password_hash=pwd_context.hash(form.password.data),

@@ -1,7 +1,7 @@
 from flask import redirect, session, url_for
 
 from app.extensions import db
-from app.models import Post
+from app.models import Post, User
 
 
 def parse_input(raw_entry, current_time):
@@ -32,8 +32,10 @@ def process_entry(raw_entry, current_time):
     while content_words and content_words[-1].startswith('#'):
         content_words.pop()
     content = ' '.join(content_words).strip()
+    author = db.session.get(User, session['user_id'])
     post = Post(author_id=session['user_id'], content=content,
                 tags=tags, board='public', status='published',
+                allow_ai_comment=author.allow_ai_comments,
                 created_at=current_time.replace(tzinfo=None),
                 updated_at=current_time.replace(tzinfo=None))
     db.session.add(post)

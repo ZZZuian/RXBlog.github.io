@@ -126,6 +126,7 @@
 
 {% block scripts %}
 {{ super() }}
+<script src="{{ url_for('static', filename='ai-comments.js') }}"></script>
 <script>
 (function() {
     var body = document.body;
@@ -554,6 +555,7 @@
     function initializePageFeatures() {
         initializeProfileContrast();
         initializeVideoCoverPreviews();
+        document.dispatchEvent(new CustomEvent('rx:page-ready'));
     }
 
     document.addEventListener('click', function(event) {

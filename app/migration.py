@@ -16,6 +16,84 @@ MIGRATION_NAME = 'tinydb_to_sqlite_v1'
 SINGLE_COMMUNITY_MIGRATION = 'collapse_boards_to_single_community_v1'
 SINGLE_FILE_PATH_MIGRATION = 'single_file_static_paths_v1'
 DEACTIVATED_IDENTITY_MIGRATION = 'release_deactivated_identities_v1'
+AI_LEGACY_POSTS_MIGRATION = 'ai_comment_legacy_posts_v1'
+AI_BOT_USERNAME = '评论特伯罗'
+
+
+def migrate_ai_comment_schema():
+    """Add AI-comment columns without rebuilding existing SQLite tables."""
+    additions = {
+        'users': {
+            'is_bot': 'BOOLEAN NOT NULL DEFAULT 0',
+            'allow_ai_comments': 'BOOLEAN NOT NULL DEFAULT 1',
+        },
+        'posts': {
+            'allow_ai_comment': 'BOOLEAN NOT NULL DEFAULT 1',
+            'ai_comment_status': "VARCHAR(20) NOT NULL DEFAULT 'none'",
+            'ai_comment_id': 'INTEGER',
+            'ai_comment_attempts': 'INTEGER NOT NULL DEFAULT 0',
+            'ai_comment_error': "VARCHAR(255) NOT NULL DEFAULT ''",
+            'ai_comment_updated_at': 'DATETIME',
+        },
+        'comments': {
+            'is_ai_generated': 'BOOLEAN NOT NULL DEFAULT 0',
+        },
+    }
+    changed = False
+    inspector = inspect(db.engine)
+    for table_name, table_additions in additions.items():
+        columns = {column['name'] for column in
+                   inspector.get_columns(table_name)}
+        for name, definition in table_additions.items():
+            if name not in columns:
+                db.session.execute(text(
+                    'ALTER TABLE {} ADD COLUMN {} {}'.format(
+                        table_name, name, definition)))
+                changed = True
+    if changed:
+        db.session.commit()
+    return changed
+
+
+def ensure_ai_bot():
+    """Create or repair the one fixed bot account, keyed by username."""
+    bot = User.query.filter_by(username=AI_BOT_USERNAME).first()
+    if not bot:
+        bot = User(username=AI_BOT_USERNAME,
+                   password_hash='!login-disabled-ai-bot!',
+                   role='bot', status='active', is_bot=True,
+                   allow_ai_comments=False)
+        bot.profile = Profile(
+            nickname=AI_BOT_USERNAME,
+            avatar='images/comment-teboluo-avatar.svg',
+            bio='在评论区随机出现的AI评论机器人')
+        db.session.add(bot)
+    else:
+        bot.is_bot = True
+        bot.role = 'bot'
+        bot.status = 'active'
+        bot.allow_ai_comments = False
+        if not bot.profile:
+            bot.profile = Profile(nickname=AI_BOT_USERNAME)
+        bot.profile.nickname = AI_BOT_USERNAME
+        bot.profile.bio = '在评论区随机出现的AI评论机器人'
+        bot.profile.avatar = 'images/comment-teboluo-avatar.svg'
+    db.session.commit()
+    return bot
+
+
+def migrate_ai_legacy_posts():
+    """Keep pre-feature posts from unexpectedly triggering an AI request."""
+    if db.session.get(MigrationState, AI_LEGACY_POSTS_MIGRATION):
+        return False
+    Post.query.filter(Post.ai_comment_status == 'none').update({
+        Post.ai_comment_status: 'skipped',
+        Post.ai_comment_error: 'legacy_post',
+        Post.ai_comment_updated_at: utcnow(),
+    }, synchronize_session=False)
+    db.session.add(MigrationState(name=AI_LEGACY_POSTS_MIGRATION))
+    db.session.commit()
+    return True
 POST_TAXONOMY_MIGRATION = 'entertainment_post_taxonomy_v1'
 LEGACY_TIMEZONE_MIGRATION = 'legacy_china_times_to_utc_v1'
 
@@ -29,6 +107,10 @@ def ensure_performance_indexes():
         'ON posts (author_id, status, created_at DESC, id DESC)',
         'CREATE INDEX IF NOT EXISTS ix_comments_post_status '
         'ON comments (post_id, status)',
+        'CREATE INDEX IF NOT EXISTS ix_comments_post_ai_generated '
+        'ON comments (post_id, is_ai_generated)',
+        'CREATE INDEX IF NOT EXISTS ix_posts_ai_comment_status '
+        'ON posts (ai_comment_status)',
         'CREATE INDEX IF NOT EXISTS ix_post_likes_post_id '
         'ON post_likes (post_id)',
         'CREATE INDEX IF NOT EXISTS ix_guestbook_profile_status_created '

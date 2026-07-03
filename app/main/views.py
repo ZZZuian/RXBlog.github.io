@@ -1,14 +1,19 @@
 from datetime import datetime, timedelta, timezone
+import logging
+import random
 
-from flask import (abort, flash, jsonify, redirect, render_template, request,
-                   session, url_for)
-from sqlalchemy import func, select
+from flask import (abort, current_app, flash, jsonify, redirect,
+                   render_template, request, session, url_for)
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import joinedload, selectinload
 
 from app.decorators import login_required
 from app.details import get_details
 from app.extensions import db
-from app.models import Comment, Post, PostImage, PostLike, User
+from app.models import (AICommentAttempt, Comment, Post, PostImage, PostLike,
+                        SiteSetting, User, utcnow)
+from app.migration import AI_BOT_USERNAME, ensure_ai_bot
+from app.services.ai_comment_service import AICommentError, AICommentService
 from app.parse import parse_input
 from app.taxonomy import category_meta, normalize_tags
 from app.time_utils import format_china_time
@@ -21,6 +26,7 @@ from .forms import (CommentForm, DeleteEntryForm, PinPostForm, PostForm,
 
 
 PER_PAGE = 10
+LOGGER = logging.getLogger(__name__)
 
 
 @main.app_context_processor
@@ -62,6 +68,40 @@ def _is_admin(user_id=None):
 
 def _can_manage_post(post):
     return post.author_id == session.get('user_id') or _is_admin()
+
+
+def _ai_comments_enabled():
+    setting = db.session.get(SiteSetting, 'ai_comment_enabled')
+    if setting:
+        return setting.value.lower() in ('1', 'true', 'yes', 'on')
+    return bool(current_app.config.get('AI_COMMENT_ENABLED', True))
+
+
+def _ai_comment_probability():
+    setting = db.session.get(SiteSetting, 'ai_comment_probability')
+    raw_value = (setting.value if setting else
+                 current_app.config.get('AI_COMMENT_PROBABILITY', 0.4))
+    try:
+        return max(0.0, min(1.0, float(raw_value)))
+    except (TypeError, ValueError):
+        return 0.4
+
+
+def _serialize_comment(comment):
+    user = comment.author
+    avatar = (user.profile.avatar if user and user.profile and
+              user.profile.avatar else 'images/default-avatar.jpg')
+    return {
+        'id': comment.id,
+        'content': comment.content,
+        'nickname': comment.nickname,
+        'profile_url': (url_for('user.view_user_profile', user_id=user.id)
+                        if user else ''),
+        'avatar_url': url_for('static', filename=avatar),
+        'created_at': format_china_time(comment.created_at),
+        'is_bot': bool(user and user.is_bot),
+        'is_ai_generated': bool(comment.is_ai_generated),
+    }
 
 
 def _set_profile_pin(post, should_pin):
@@ -197,10 +237,12 @@ def create_post():
             prepared_images = prepare_images(form.images.data or [])
             upload_field = 'video'
             prepared_videos = prepare_videos([form.video.data])
+            author = db.session.get(User, session['user_id'])
             post = Post(author_id=session['user_id'], title=form.title.data.strip(),
                         content=form.content.data.strip(), board='public',
                         category=form.category.data,
-                        tags=_parse_tags(form.tags.data), status='published')
+                        tags=_parse_tags(form.tags.data), status='published',
+                        allow_ai_comment=author.allow_ai_comments)
             db.session.add(post)
             db.session.flush()
             created_paths = store_images(
@@ -321,7 +363,8 @@ def view_post(post_id):
                            author_like_count=author_like_count,
                            author_comment_count=author_comment_count,
                            reading_minutes=reading_minutes,
-                           page_post_author_id=post.author_id)
+                           page_post_author_id=post.author_id,
+                           ai_comments_enabled=_ai_comments_enabled())
 
 
 @main.route('/timestamp/<timestamp>')
@@ -591,23 +634,184 @@ def api_add_comment(post_id):
                       content=content)
     db.session.add(comment)
     db.session.commit()
-    user = db.session.get(User, session['user_id'])
-    avatar = (user.profile.avatar if user.profile and user.profile.avatar
-              else 'images/default-avatar.jpg')
     comment_count = db.session.scalar(
         select(func.count(Comment.id)).where(
             Comment.post_id == post.id, Comment.status == 'visible')) or 0
     return jsonify({
-        'comment': {
-            'id': comment.id,
-            'content': comment.content,
-            'nickname': user.display_name,
-            'profile_url': url_for('user.view_user_profile', user_id=user.id),
-            'avatar_url': url_for('static', filename=avatar),
-            'created_at': format_china_time(comment.created_at)
-        },
+        'comment': _serialize_comment(comment),
         'count': comment_count
     }), 201
+
+
+@main.route('/api/ai-comments/posts/<int:post_id>/generate', methods=['POST'])
+@login_required
+def generate_ai_comment(post_id):
+    post = db.session.get(Post, post_id)
+    requester = db.session.get(User, session['user_id'])
+    payload = request.get_json(silent=True) or {}
+    force = bool(payload.get('force')) and requester.role == 'admin'
+    if not post or post.status != 'published':
+        return jsonify({'error': '博文不存在。'}), 404
+    if post.author_id != requester.id and requester.role != 'admin':
+        return jsonify({'error': '只能触发自己博文的AI评论。'}), 403
+    if not _ai_comments_enabled():
+        return jsonify({'error': 'AI评论已关闭。', 'status': 'disabled'}), 403
+    if not post.allow_ai_comment and not force:
+        return jsonify({'error': '作者已关闭AI评论。', 'status': 'disabled'}), 403
+    existing = Comment.query.filter_by(
+        post_id=post.id, is_ai_generated=True, status='visible').first()
+    previous_comment_id = existing.id if existing and force else None
+    if existing and not force:
+        return jsonify({'status': 'generated',
+                        'comment': _serialize_comment(existing),
+                        'count': _comment_counts([post.id]).get(post.id, 0)})
+
+    now = utcnow()
+    if post.ai_comment_status == 'pending':
+        fresh_after = now - timedelta(minutes=2)
+        if (post.ai_comment_updated_at and
+                post.ai_comment_updated_at >= fresh_after):
+            return jsonify({'status': 'pending'}), 409
+        post.ai_comment_status = 'failed'
+        post.ai_comment_error = 'stale_pending'
+        db.session.commit()
+
+    max_attempts = current_app.config.get('AI_COMMENT_MAX_ATTEMPTS', 2)
+    if post.ai_comment_attempts >= max_attempts and not force:
+        return jsonify({'error': '该博文的AI评论重试次数已用完。',
+                        'status': post.ai_comment_status}), 429
+
+    day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    daily_count = db.session.scalar(select(func.count(AICommentAttempt.id)).where(
+        AICommentAttempt.requested_by == requester.id,
+        AICommentAttempt.created_at >= day_start)) or 0
+    if daily_count >= current_app.config.get('AI_COMMENT_USER_DAILY_LIMIT', 10):
+        return jsonify({'error': '今日AI评论触发次数已达上限。'}), 429
+    minute_count = db.session.scalar(select(func.count(AICommentAttempt.id)).where(
+        AICommentAttempt.created_at >= now - timedelta(minutes=1))) or 0
+    if minute_count >= current_app.config.get('AI_COMMENT_GLOBAL_MINUTE_LIMIT', 20):
+        return jsonify({'error': 'AI评论请求较多，请稍后再试。'}), 429
+
+    allowed_statuses = ['none']
+    if force:
+        allowed_statuses.extend(['failed', 'skipped', 'generated'])
+    claimed = db.session.execute(update(Post).where(
+        Post.id == post.id,
+        Post.ai_comment_status.in_(allowed_statuses)).values(
+            ai_comment_status='pending',
+            ai_comment_attempts=Post.ai_comment_attempts + 1,
+            ai_comment_error='', ai_comment_updated_at=now),
+        execution_options={'synchronize_session': False}).rowcount
+    db.session.commit()
+    if not claimed:
+        db.session.refresh(post)
+        return jsonify({'status': post.ai_comment_status}), 409
+
+    probability = _ai_comment_probability()
+    if not force and random.random() > probability:
+        post = db.session.get(Post, post.id)
+        post.ai_comment_status = 'skipped'
+        post.ai_comment_error = 'probability'
+        post.ai_comment_updated_at = utcnow()
+        db.session.commit()
+        return jsonify({'status': 'skipped'})
+
+    service = AICommentService()
+    decision = service.should_comment(post)
+    if not decision['should_comment']:
+        post.ai_comment_status = ('generated' if previous_comment_id
+                                  else 'skipped')
+        post.ai_comment_error = ('regenerate_content_rule'
+                                 if previous_comment_id else 'content_rule')
+        post.ai_comment_updated_at = utcnow()
+        db.session.commit()
+        return jsonify({'status': post.ai_comment_status,
+                        'retained_previous': bool(previous_comment_id),
+                        'tone': decision['tone']})
+
+    attempt = AICommentAttempt(post_id=post.id, requested_by=requester.id,
+                               status='started')
+    db.session.add(attempt)
+    db.session.commit()
+    try:
+        content = service.generate_post_comment(post, decision['tone'])
+        post = db.session.get(Post, post.id)
+        if not post or post.status != 'published':
+            raise AICommentError('post_unavailable', '博文已不可用。')
+        if content is None:
+            post.ai_comment_status = ('generated' if previous_comment_id
+                                      else 'skipped')
+            post.ai_comment_error = ('regenerate_model_skip'
+                                     if previous_comment_id else 'model_skip')
+            attempt.status = 'skipped'
+            post.ai_comment_updated_at = utcnow()
+            db.session.commit()
+            return jsonify({'status': post.ai_comment_status,
+                            'retained_previous': bool(previous_comment_id)})
+        bot = ensure_ai_bot()
+        duplicate = Comment.query.filter_by(
+            post_id=post.id, is_ai_generated=True, status='visible').first()
+        if duplicate and not previous_comment_id:
+            post.ai_comment_status = 'generated'
+            post.ai_comment_id = duplicate.id
+            attempt.status = 'duplicate'
+            db.session.commit()
+            return jsonify({'status': 'generated'})
+        comment = Comment(post_id=post.id, author_id=bot.id,
+                          content=content, is_ai_generated=True)
+        db.session.add(comment)
+        db.session.flush()
+        if duplicate and previous_comment_id:
+            duplicate.status = 'deleted'
+        post.ai_comment_status = 'generated'
+        post.ai_comment_id = comment.id
+        post.ai_comment_error = ''
+        post.ai_comment_updated_at = utcnow()
+        attempt.status = 'success'
+        db.session.commit()
+        return jsonify({'status': 'generated',
+                        'comment': _serialize_comment(comment),
+                        'count': _comment_counts([post.id]).get(post.id, 0)}), 201
+    except AICommentError as error:
+        db.session.rollback()
+        post = db.session.get(Post, post_id)
+        attempt = db.session.get(AICommentAttempt, attempt.id)
+        if post:
+            post.ai_comment_status = ('generated' if previous_comment_id
+                                      else 'failed')
+            post.ai_comment_error = (
+                ('regenerate_' + error.code) if previous_comment_id
+                else error.code)[:255]
+            post.ai_comment_updated_at = utcnow()
+        if attempt:
+            attempt.status = 'failed'
+            attempt.error_code = error.code[:80]
+        db.session.commit()
+        LOGGER.warning('AI comment failed for post %s: %s', post_id, error.code)
+        return jsonify({'error': 'AI评论暂时没有出现。',
+                        'status': ('generated' if previous_comment_id
+                                   else 'failed'),
+                        'retained_previous': bool(previous_comment_id)}), 503
+    except Exception:
+        db.session.rollback()
+        post = db.session.get(Post, post_id)
+        attempt = db.session.get(AICommentAttempt, attempt.id)
+        if post:
+            post.ai_comment_status = ('generated' if previous_comment_id
+                                      else 'failed')
+            post.ai_comment_error = ('regenerate_internal_error'
+                                     if previous_comment_id
+                                     else 'internal_error')
+            post.ai_comment_updated_at = utcnow()
+        if attempt:
+            attempt.status = 'failed'
+            attempt.error_code = 'internal_error'
+        db.session.commit()
+        LOGGER.exception('Unexpected AI comment failure for post %s', post_id)
+        return jsonify({'error': 'AI评论暂时没有出现。',
+                        'status': ('generated' if previous_comment_id
+                                   else 'failed'),
+                        'retained_previous': bool(previous_comment_id)}), 503
 
 
 @main.route('/comment/<int:comment_id>/delete', methods=['POST'])

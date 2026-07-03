@@ -25,6 +25,8 @@ class User(db.Model):
     status = db.Column(db.String(20), nullable=False, default='active')
     created_at = db.Column(db.DateTime, nullable=False, default=utcnow)
     last_login_at = db.Column(db.DateTime)
+    is_bot = db.Column(db.Boolean, nullable=False, default=False, index=True)
+    allow_ai_comments = db.Column(db.Boolean, nullable=False, default=True)
 
     profile = db.relationship('Profile', back_populates='user', uselist=False,
                               cascade='all, delete-orphan')
@@ -74,6 +76,13 @@ class Post(db.Model):
     created_at = db.Column(db.DateTime, nullable=False, default=utcnow, index=True)
     updated_at = db.Column(db.DateTime, nullable=False, default=utcnow,
                            onupdate=utcnow)
+    allow_ai_comment = db.Column(db.Boolean, nullable=False, default=True)
+    ai_comment_status = db.Column(db.String(20), nullable=False,
+                                  default='none', index=True)
+    ai_comment_id = db.Column(db.Integer)
+    ai_comment_attempts = db.Column(db.Integer, nullable=False, default=0)
+    ai_comment_error = db.Column(db.String(255), nullable=False, default='')
+    ai_comment_updated_at = db.Column(db.DateTime)
     author = db.relationship('User', back_populates='posts')
     comments = db.relationship('Comment', back_populates='post',
                                cascade='all, delete-orphan')
@@ -174,6 +183,8 @@ class Comment(db.Model):
     content = db.Column(db.String(500), nullable=False)
     status = db.Column(db.String(20), nullable=False, default='visible')
     created_at = db.Column(db.DateTime, nullable=False, default=utcnow)
+    is_ai_generated = db.Column(db.Boolean, nullable=False, default=False,
+                                index=True)
 
     post = db.relationship('Post', back_populates='comments')
     author = db.relationship('User')
@@ -245,3 +256,20 @@ class MigrationState(db.Model):
 
     name = db.Column(db.String(100), primary_key=True)
     completed_at = db.Column(db.DateTime, nullable=False, default=utcnow)
+
+
+class AICommentAttempt(db.Model):
+    __tablename__ = 'ai_comment_attempts'
+
+    id = db.Column(db.Integer, primary_key=True)
+    post_id = db.Column(db.Integer, db.ForeignKey('posts.id'), nullable=False,
+                        index=True)
+    requested_by = db.Column(db.Integer, db.ForeignKey('users.id'), index=True)
+    status = db.Column(db.String(20), nullable=False, default='started',
+                       index=True)
+    error_code = db.Column(db.String(80), nullable=False, default='')
+    created_at = db.Column(db.DateTime, nullable=False, default=utcnow,
+                           index=True)
+
+    post = db.relationship('Post')
+    requester = db.relationship('User')

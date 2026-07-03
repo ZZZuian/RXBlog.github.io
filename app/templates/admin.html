@@ -27,4 +27,36 @@
         <p><a class="btn btn-default" href="{{ url_for('auth.change_password') }}">点击此处</a></p>
     </div>
 
+    {% if user.role == 'admin' %}
+    <hr>
+    <section class="admin-ai-panel">
+        <h3>“评论特伯罗”管理</h3>
+        <form method="post" action="{{ url_for('admin.update_ai_comment_settings') }}" class="settings-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <label><input type="checkbox" name="enabled"{% if ai_comment_enabled %} checked{% endif %}> 全局开启 AI 评论</label>
+            <label>自动评论概率 <input type="number" name="probability" min="0" max="1" step="0.05" value="{{ ai_comment_probability }}"></label>
+            <button class="btn btn-primary" type="submit">保存 AI 设置</button>
+        </form>
+        <p>已生成机器人评论：{{ ai_comment_count }}；实际 AI 调用记录：{{ ai_call_count }}</p>
+        <h4>最近 AI 任务状态</h4>
+        {% if ai_posts %}
+        <div class="admin-ai-list">
+            {% for item in ai_posts %}
+            <article class="admin-ai-row">
+                <a href="{{ url_for('main.view_post', post_id=item.id) }}">#{{ item.id }} {{ item.title or item.excerpt }}</a>
+                <span class="ai-status ai-status-{{ item.ai_comment_status }}">{{ item.ai_comment_status }}</span>
+                <small>尝试 {{ item.ai_comment_attempts }} 次{% if item.ai_comment_error %} · {{ item.ai_comment_error }}{% endif %}</small>
+                <form method="post" action="{{ url_for('admin.toggle_post_ai_comment', post_id=item.id) }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button class="btn btn-default" type="submit">{{ '禁止此帖' if item.allow_ai_comment else '允许此帖' }}</button>
+                </form>
+                {% if item.ai_comment_status in ('failed', 'skipped', 'generated') %}<button type="button" class="btn btn-default js-ai-admin-retry" data-ai-retry-url="{{ url_for('main.generate_ai_comment', post_id=item.id) }}">重新生成</button>{% endif %}
+            </article>
+            {% endfor %}
+        </div>
+        {% else %}<p>还没有 AI 评论任务。</p>{% endif %}
+        <p class="ai-admin-status" aria-live="polite"></p>
+    </section>
+    {% endif %}
+
 {% endblock %}

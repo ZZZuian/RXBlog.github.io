@@ -16,7 +16,8 @@ def normalize_account(value):
 
 
 def account_exists(form, field):
-    if not User.query.filter_by(username=field.data).first():
+    user = User.query.filter_by(username=field.data).first()
+    if not user or user.is_bot:
         raise ValidationError('账号不存在，请先注册。')
 
 
@@ -63,7 +64,8 @@ class PasswordCorrect:
         except KeyError:
             raise ValidationError("无效的字段名 '%s'。" % self.fieldname)
         user = User.query.filter_by(username=account.data).first()
-        if not user or not pwd_context.verify(field.data, user.password_hash):
+        if (not user or user.is_bot or
+                not pwd_context.verify(field.data, user.password_hash)):
             raise ValidationError('账号或密码错误，请重试。')
 
 

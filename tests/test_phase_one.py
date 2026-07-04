@@ -418,6 +418,8 @@ class CommunityPlatformTest(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         page = response.get_data(as_text=True)
         self.assertIn('article-detail-layout', page)
+        self.assertIn('data-confirm-title="删除这篇博文？"', page)
+        self.assertNotIn("return confirm('确定删除这条记录吗？')", page)
         self.assertIn('article-author-card', page)
         self.assertIn('article-info-card', page)
         self.assertIn('article-cover', page)

@@ -5,7 +5,7 @@
 
 {% block styles %}
 {{ super() }}
-<link rel="stylesheet" href="{{ url_for('static', filename='custom.css') }}?v=20260702-video-cover">
+<link rel="stylesheet" href="{{ url_for('static', filename='custom.css') }}?v=20260704-confirm-dialog">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&family=Noto+Serif+SC:wght@500;600;700&display=swap">
 {% endblock %}
 
@@ -122,6 +122,19 @@
     <footer class="site-footer"><span>© 2026 {{ details['author_name'] }}</span><span>{{ details['chronofile_name'] }}</span></footer>
 </div>
 
+<div id="appConfirmDialog" class="app-confirm-dialog" hidden role="dialog" aria-modal="true" aria-labelledby="appConfirmTitle" aria-describedby="appConfirmMessage">
+    <button type="button" class="app-confirm-backdrop" data-confirm-cancel aria-label="关闭确认框"></button>
+    <div class="app-confirm-card" role="document">
+        <div class="app-confirm-icon" aria-hidden="true">!</div>
+        <h2 id="appConfirmTitle">确认操作？</h2>
+        <p id="appConfirmMessage"></p>
+        <div class="app-confirm-actions">
+            <button type="button" class="btn app-confirm-cancel" data-confirm-cancel>取消</button>
+            <button type="button" class="btn app-confirm-submit" data-confirm-submit>确认</button>
+        </div>
+    </div>
+</div>
+
 <audio id="bgMusic" preload="metadata"></audio>
 
 {% block scripts %}
@@ -156,6 +169,69 @@
     document.addEventListener('keydown', function(event) { if (event.key === 'Escape') setSidebar(false); });
 
     var csrfToken = document.querySelector('meta[name="csrf-token"]').content;
+    var confirmDialog = document.getElementById('appConfirmDialog');
+    var pendingConfirmForm = null;
+    var pendingConfirmSubmitter = null;
+    var confirmReturnFocus = null;
+
+    function closeAppConfirm() {
+        if (!confirmDialog || confirmDialog.hidden) return;
+        confirmDialog.hidden = true;
+        body.classList.remove('confirm-dialog-open');
+        pendingConfirmForm = null;
+        pendingConfirmSubmitter = null;
+        if (confirmReturnFocus && document.contains(confirmReturnFocus)) {
+            confirmReturnFocus.focus();
+        }
+        confirmReturnFocus = null;
+    }
+
+    document.addEventListener('submit', function(event) {
+        var form = event.target.closest('form[data-confirm-message]');
+        if (!form || form.dataset.confirmed === 'true') {
+            if (form) delete form.dataset.confirmed;
+            return;
+        }
+        event.preventDefault();
+        pendingConfirmForm = form;
+        pendingConfirmSubmitter = event.submitter || null;
+        confirmReturnFocus = pendingConfirmSubmitter || document.activeElement;
+        confirmDialog.querySelector('#appConfirmTitle').textContent =
+            form.dataset.confirmTitle || '确认操作？';
+        confirmDialog.querySelector('#appConfirmMessage').textContent =
+            form.dataset.confirmMessage;
+        var confirmButton = confirmDialog.querySelector('[data-confirm-submit]');
+        confirmButton.textContent = form.dataset.confirmButton || '确认';
+        confirmDialog.hidden = false;
+        body.classList.add('confirm-dialog-open');
+        confirmButton.focus();
+    });
+
+    confirmDialog.addEventListener('click', function(event) {
+        if (event.target.closest('[data-confirm-cancel]')) {
+            closeAppConfirm();
+            return;
+        }
+        if (!event.target.closest('[data-confirm-submit]') ||
+                !pendingConfirmForm) return;
+        var form = pendingConfirmForm;
+        var submitter = pendingConfirmSubmitter;
+        confirmDialog.hidden = true;
+        body.classList.remove('confirm-dialog-open');
+        pendingConfirmForm = null;
+        pendingConfirmSubmitter = null;
+        confirmReturnFocus = null;
+        form.dataset.confirmed = 'true';
+        if (submitter && form.contains(submitter)) form.requestSubmit(submitter);
+        else form.requestSubmit();
+    });
+
+    document.addEventListener('keydown', function(event) {
+        if (event.key === 'Escape' && confirmDialog && !confirmDialog.hidden) {
+            event.preventDefault();
+            closeAppConfirm();
+        }
+    });
     document.addEventListener('click', function(event) {
         var button = event.target.closest('.js-post-like');
         if (!button || button.disabled) return;

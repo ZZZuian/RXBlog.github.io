@@ -1,36 +1,22 @@
-{% extends "bootstrap/base.html" %}
-{% import "bootstrap/wtf.html" as wtf %}
+<!DOCTYPE html>
+<html>
+  <head>
 
-{% block title %}{{ details['chronofile_name'] }}{% endblock %}
+    <title>RXBlog</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-{% block styles %}
-{{ super() }}
-<link rel="stylesheet" href="{{ url_for('static', filename='custom.css') }}?v=20260705-multi-image-picker">
+    <!-- Bootstrap -->
+    <link href="//cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/3.3.7/css/bootstrap.min.css" rel="stylesheet">
+<link rel="stylesheet" href="/static/custom.css?v=20260705-multi-image-picker">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&family=Noto+Serif+SC:wght@500;600;700&display=swap">
-{% endblock %}
 
-{% block head %}
-{{ super() }}
-<meta name="csrf-token" content="{{ csrf_token() }}">
-<link rel="shortcut icon" href="{{ url_for('static', filename='favicon.ico') }}" type="image/x-icon">
-<link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}" type="image/x-icon">
-{% endblock %}
+<meta name="csrf-token" content="IjdiNDRiYTBhMjQ3Yzk0M2M5ZWNmYTg0NWVlYTg4OGE2MDZjMWFhMWIi.akm3ig.yqYKw2qf2kzJtxaUwHIrEgMNbZA">
+<link rel="shortcut icon" href="/static/favicon.ico" type="image/x-icon">
+<link rel="icon" href="/static/favicon.ico" type="image/x-icon">
 
-{% macro nav_icon(name) %}
-<svg class="sidebar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-{% if name == 'home' %}<path d="M3 11.5 12 4l9 7.5"/><path d="M5.5 10.5V20h13v-9.5"/><path d="M9.5 20v-6h5v6"/>
-{% elif name == 'write' %}<path d="M4 20h4l11-11a2.8 2.8 0 0 0-4-4L4 16v4Z"/><path d="m13.5 6.5 4 4"/>
-{% elif name == 'tag' %}<path d="M20 13 13 20l-9-9V4h7l9 9Z"/><circle cx="8.5" cy="8.5" r="1"/>
-{% elif name == 'calendar' %}<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/>
-{% elif name == 'settings' %}<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1a1.7 1.7 0 0 0 1.9.3A1.7 1.7 0 0 0 10 3V2.8h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z"/>
-{% elif name == 'login' %}<path d="M10 17l5-5-5-5M15 12H3"/><path d="M14 4h5a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-5"/>
-{% elif name == 'register' %}<circle cx="9" cy="8" r="4"/><path d="M2.5 21a6.5 6.5 0 0 1 13 0M19 8v6M16 11h6"/>
-{% elif name == 'logout' %}<path d="M14 8l4 4-4 4M18 12H7"/><path d="M11 4H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h6"/>
-{% endif %}
-</svg>
-{% endmacro %}
-
-{% block body %}
+  </head>
+  <body>
+    
 <div class="site-background" aria-hidden="true"></div>
 <div class="site-background-overlay" aria-hidden="true"></div>
 
@@ -41,41 +27,56 @@
 
 <aside id="siteSidebar" class="site-sidebar" aria-label="主导航">
     <div class="sidebar-brand">
-        <a href="{{ url_for('main.browse_all_entries') }}">
-            <img class="brand-mark" src="{{ url_for('static', filename='images/site-logo.png') }}" alt="RXBlog 网站图标">
-            <span class="brand-copy"><strong>{{ details['chronofile_name'] }}</strong><small>COMMUNITY BLOG</small></span>
+        <a href="/">
+            <img class="brand-mark" src="/static/images/site-logo.png" alt="RXBlog 网站图标">
+            <span class="brand-copy"><strong>RXBlog</strong><small>COMMUNITY BLOG</small></span>
         </a>
         <button id="sidebarClose" class="sidebar-close" type="button" aria-label="关闭导航">×</button>
     </div>
 
-    {% if session.logged_in %}
-    <div class="sidebar-profile">
-        <img class="sidebar-profile-avatar" src="{{ url_for('static', filename=details['profile'].avatar or 'images/default-avatar.jpg') }}" alt="{{ details['author_name'] }}的头像">
-        <div><strong>{{ details['author_name'] }}</strong><small>欢迎回来</small></div>
-    </div>
-    {% endif %}
+    
 
     <nav class="sidebar-nav">
         <p class="sidebar-section-title">社区导航</p>
-        <a class="sidebar-link{% if request.endpoint == 'main.browse_all_entries' %} active{% endif %}" href="{{ url_for('main.browse_all_entries') }}">{{ nav_icon('home') }}<span>社区首页</span></a>
-        {% if session.logged_in %}
-        <a class="sidebar-link{% if request.endpoint in ['main.create_post', 'main.edit_post'] %} active{% endif %}" href="{{ url_for('main.create_post') }}">{{ nav_icon('write') }}<span>发布博文</span></a>
-        {% endif %}
-        <a class="sidebar-link{% if request.endpoint in ['main.view_all_tags', 'main.view_entries_for_tag'] %} active{% endif %}" href="{{ url_for('main.view_all_tags') }}">{{ nav_icon('tag') }}<span>兴趣标签</span></a>
-        <a class="sidebar-link{% if request.endpoint in ['main.view_all_days', 'main.view_entries_for_day'] %} active{% endif %}" href="{{ url_for('main.view_all_days') }}">{{ nav_icon('calendar') }}<span>时间归档</span></a>
+        <a class="sidebar-link" href="/">
+<svg class="sidebar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+<path d="M3 11.5 12 4l9 7.5"/><path d="M5.5 10.5V20h13v-9.5"/><path d="M9.5 20v-6h5v6"/>
+
+</svg>
+<span>社区首页</span></a>
+        
+        <a class="sidebar-link" href="/tags">
+<svg class="sidebar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+<path d="M20 13 13 20l-9-9V4h7l9 9Z"/><circle cx="8.5" cy="8.5" r="1"/>
+
+</svg>
+<span>兴趣标签</span></a>
+        <a class="sidebar-link" href="/days">
+<svg class="sidebar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/>
+
+</svg>
+<span>时间归档</span></a>
 
         <p class="sidebar-section-title">账户</p>
-        {% if session.logged_in %}
-        <a class="sidebar-link{% if request.endpoint in ['user.settings_profile', 'user.settings_music', 'auth.change_account', 'auth.change_password'] %} active{% endif %}" href="{{ url_for('user.settings_profile') }}">{{ nav_icon('settings') }}<span>个人设置</span></a>
-        <a class="sidebar-link" href="{{ url_for('auth.logout') }}">{{ nav_icon('logout') }}<span>退出登录</span></a>
-        {% else %}
-        <a class="sidebar-link{% if request.endpoint == 'auth.login' %} active{% endif %}" href="{{ url_for('auth.login') }}">{{ nav_icon('login') }}<span>登录</span></a>
-        <a class="sidebar-link{% if request.endpoint == 'auth.register' %} active{% endif %}" href="{{ url_for('auth.register') }}">{{ nav_icon('register') }}<span>注册</span></a>
-        {% endif %}
+        
+        <a class="sidebar-link" href="/admin/login">
+<svg class="sidebar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+<path d="M10 17l5-5-5-5M15 12H3"/><path d="M14 4h5a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-5"/>
+
+</svg>
+<span>登录</span></a>
+        <a class="sidebar-link" href="/admin/register">
+<svg class="sidebar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+<circle cx="9" cy="8" r="4"/><path d="M2.5 21a6.5 6.5 0 0 1 13 0M19 8v6M16 11h6"/>
+
+</svg>
+<span>注册</span></a>
+        
     </nav>
 
     <div class="sidebar-bottom">
-        <div id="musicPlayer" class="music-player sidebar-music" data-profile-user-id="{{ music_profile_user_id|default('', true) }}" data-post-author-id="{{ page_post_author_id|default('', true) }}">
+        <div id="musicPlayer" class="music-player sidebar-music" data-profile-user-id="" data-post-author-id="1">
             <div class="music-disc" aria-hidden="true"><span></span></div>
             <div class="music-main">
                 <div class="music-heading"><span id="musicTitle" class="music-title">背景音乐</span><span id="musicTime">00:00</span></div>
@@ -106,20 +107,125 @@
 
 <div class="app-shell">
     <header class="mobile-topbar">
-        <span>{{ details['chronofile_name'] }}</span>
+        <span>RXBlog</span>
     </header>
     <main id="content" class="app-content">
-        <div class="content-glass-panel {% block content_panel_class %}{% endblock %}">
-            {% for message in get_flashed_messages() %}
-            <div class="alert alert-info glass-alert">
-                <a href="#" class="close" data-dismiss="alert" aria-label="关闭">&times;</a>
-                <span class="message">{{ message }}</span>
+        <div class="content-glass-panel article-page-panel">
+            
+            
+
+
+<div class="article-detail-layout">
+    <article class="article-reader-card">
+        
+        <div class="article-cover-video-frame">
+            <video class="article-cover-video video-cover-preview" src="/static/uploads/posts/a00bd1e2eaeb4b9a84b5744e3a385186.mp4?v=1862186" muted playsinline preload="metadata" aria-label="seible你真的特别萌呀的视频封面"></video>
+        </div>
+        
+
+        <div class="article-reader-inner">
+            
+            <a class="article-back-link" href="/user/1">← 返回个人主页</a>
+            
+
+            <header class="article-heading">
+                <h1>seible你真的特别萌呀</h1>
+                <div class="article-heading-row">
+                    <div class="article-meta-chips">
+                        <span class="article-meta-chip">◉ RXi_ian</span>
+                        <time class="article-meta-chip" datetime="2026-07-04T16:58:41.125479Z">◷ 2026-07-05 00:58</time>
+                        <a class="article-meta-chip category" href="/user/1?category=vtuber">◈ Vtuber</a>
+                        <a class="article-meta-chip tag" href="/tags/seible">#seible</a>
+                    </div>
+                    <div class="article-actions">
+                        <span class="btn article-action-btn">♡ 1</span>
+
+                        
+                    </div>
+                </div>
+            </header>
+
+            <div class="article-body">小钻永远是我的kami oshi~
+会认真读每一条sc的认真可爱钻儿~</div>
+
+            
+
+            
+            <div class="post-video-list">
+                
+                <div class="post-video-item">
+                    <video class="post-video" controls preload="auto" playsinline>
+                        <source src="/static/uploads/posts/a00bd1e2eaeb4b9a84b5744e3a385186.mp4?v=1862186" type="video/mp4">
+                        当前浏览器不支持视频播放。
+                    </video>
+                    <p class="video-playback-error" hidden>
+                        浏览器无法解码这个视频，它可能使用了 HEVC/H.265 等不兼容编码。
+                        <a href="/static/uploads/posts/a00bd1e2eaeb4b9a84b5744e3a385186.mp4?v=1862186" download>下载原视频</a>
+                    </p>
+                </div>
+                
             </div>
-            {% endfor %}
-            {% block page_content %}{% endblock %}
+            
+
+            <div id="imageLightbox" class="image-lightbox" hidden>
+                <button type="button" class="lightbox-close" aria-label="关闭">×</button>
+                <img src="" alt="放大的博文图片">
+            </div>
+
+            <section class="comment-section article-comments">
+                <h3 id="commentCount" data-count="1">评论 1</h3>
+                <div class="comment-list" id="commentList">
+                
+                <div class="comment-item" id="comment-9">
+                    <div class="comment-header">
+                        <div class="comment-avatar-container">
+                            <img src="/static/images/comment-teboluo-avatar.svg" alt="评论特伯罗" class="comment-avatar">
+                        </div>
+                        <div class="comment-meta">
+                            <a href="/user/3" class="comment-author-link comment-nickname">评论特伯罗</a><span class="ai-bot-badge" title="内容由AI生成">AI机器人</span>
+                            <span class="comment-time">2026-07-05 00:58</span>
+                        </div>
+                        
+                    </div>
+                    <div class="comment-body">小钻真的值得这份喜欢，读sc的小细节太戳人了~</div>
+                </div>
+                
+                </div>
+                <p class="ai-comment-status" aria-live="polite"></p>
+                <p class="login-hint"><a href="/admin/login?next=http://127.0.0.1:5000/post/9">登录</a>后参与评论。</p>
+            </section>
+        </div>
+    </article>
+
+    <aside class="article-side-rail">
+        <section class="article-author-card">
+            <img class="article-author-avatar" src="/static/uploads/avatar/6f856231c33849ac9ddaae1da18d3697.jpg" alt="RXi_ian">
+            <h2>RXi_ian</h2>
+            <p>记录游戏、现场、推与生活碎片</p>
+            <div class="article-author-stats">
+                <span><strong>6</strong><small>文章</small></span>
+                <span><strong>1</strong><small>获赞</small></span>
+                <span><strong>6</strong><small>评论</small></span>
+            </div>
+            <a class="btn btn-primary article-profile-link" href="/user/1">查看个人主页</a>
+        </section>
+
+        <section class="article-info-card">
+            <span class="section-eyebrow">ARTICLE INFO</span>
+            <h2>文章信息</h2>
+            <dl>
+                <div><dt>分区</dt><dd>Vtuber</dd></div>
+                <div><dt>阅读时间</dt><dd>约 1 分钟</dd></div>
+                <div><dt>图片</dt><dd>0 张</dd></div>
+                <div><dt>视频</dt><dd>1 个</dd></div>
+            </dl>
+        </section>
+    </aside>
+</div>
+
         </div>
     </main>
-    <footer class="site-footer"><span>© 2026 {{ details['author_name'] }}</span><span>{{ details['chronofile_name'] }}</span></footer>
+    <footer class="site-footer"><span>© 2026 Chronologist</span><span>RXBlog</span></footer>
 </div>
 
 <div id="appConfirmDialog" class="app-confirm-dialog" hidden role="dialog" aria-modal="true" aria-labelledby="appConfirmTitle" aria-describedby="appConfirmMessage">
@@ -137,9 +243,11 @@
 
 <audio id="bgMusic" preload="metadata"></audio>
 
-{% block scripts %}
-{{ super() }}
-<script src="{{ url_for('static', filename='ai-comments.js') }}"></script>
+
+
+    <script src="//cdnjs.cloudflare.com/ajax/libs/jquery/1.12.4/jquery.min.js"></script>
+    <script src="//cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/3.3.7/js/bootstrap.min.js"></script>
+<script src="/static/ai-comments.js"></script>
 <script>
 (function() {
     var body = document.body;
@@ -340,9 +448,9 @@
     var disc = document.querySelector('.music-disc');
     var defaultTrack = {
         id: 'default-bgm', key: 'default-bgm', title: '默认bgm', artist: '',
-        cover: {{ url_for('static', filename='images/default-bgm-cover.png')|tojson }},
+        cover: "/static/images/default-bgm-cover.png",
         duration: 0,
-        audio: {{ url_for('static', filename='music/bgm.mp3')|tojson }}
+        audio: "/static/music/bgm.mp3"
     };
     var playlist = [defaultTrack];
     var playlistSource = 'default';
@@ -563,7 +671,7 @@
     var musicContextSequence = 0;
     function refreshMusicContext() {
         var requestSequence = ++musicContextSequence;
-        var contextUrl = {{ url_for('user.api_music_context')|tojson }};
+        var contextUrl = "/api/music/context";
         if (musicBrowseProfileUserId) {
             contextUrl += '?profile_user_id=' +
                           encodeURIComponent(musicBrowseProfileUserId);
@@ -834,7 +942,7 @@
         try { url = new URL(link.href, window.location.href); }
         catch (error) { return false; }
         if (url.origin !== window.location.origin || !/^https?:$/.test(url.protocol)) return false;
-        if (url.pathname === {{ url_for('auth.logout')|tojson }}) return false;
+        if (url.pathname === "/admin/logout") return false;
         if (url.pathname === window.location.pathname &&
                 url.search === window.location.search && url.hash) return false;
         return true;
@@ -940,5 +1048,7 @@
     syncPlayingState();
 })();
 </script>
-{% endblock %}
-{% endblock %}
+
+
+  </body>
+</html>

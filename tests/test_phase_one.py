@@ -549,6 +549,8 @@ class CommunityPlatformTest(unittest.TestCase):
         self.assertIn("localStorage.setItem('musicPlaying', '0')", page)
         self.assertIn('video.currentTime = 0', page)
         self.assertIn('function freezeArticleCover()', page)
+        self.assertIn('requestVideoFrameCallback', page)
+        self.assertIn('freezeRenderedArticleFrame()', page)
         self.assertIn("video.removeAttribute('src')", page)
         home = self.client.get('/').get_data(as_text=True)
         self.assertIn('class="video-cover-preview"', home)

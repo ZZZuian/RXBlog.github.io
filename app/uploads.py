@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
+import subprocess
+from tempfile import TemporaryDirectory
 from uuid import uuid4
 
 from flask import current_app
@@ -38,6 +40,47 @@ class PreparedVideo:
     data: bytes
     extension: str
     mime_type: str
+
+
+def _transcode_hevc_mp4(data):
+    """Convert phone-recorded HEVC MP4 to a browser-friendly H.264 MP4."""
+    try:
+        import imageio_ffmpeg
+        executable = imageio_ffmpeg.get_ffmpeg_exe()
+    except (ImportError, RuntimeError, OSError) as error:
+        current_app.logger.error('HEVC transcoder is unavailable: %s', error)
+        raise UploadValidationError('服务器暂时无法转换该 HEVC/H.265 视频，请稍后重试。')
+
+    with TemporaryDirectory() as directory:
+        source = Path(directory) / 'source.mp4'
+        output = Path(directory) / 'output.mp4'
+        source.write_bytes(data)
+        command = [
+            executable, '-hide_banner', '-loglevel', 'error', '-y',
+            '-i', str(source), '-map', '0:v:0', '-map', '0:a?',
+            '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23',
+            '-vf', ('scale=1280:720:force_original_aspect_ratio=decrease:'
+                    'force_divisible_by=2,fps=30'),
+            '-profile:v', 'main', '-level:v', '3.1',
+            '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '128k',
+            '-movflags', '+faststart', str(output)
+        ]
+        try:
+            completed = subprocess.run(
+                command, capture_output=True, check=False,
+                timeout=current_app.config.get('VIDEO_TRANSCODE_TIMEOUT', 180)
+            )
+        except (OSError, subprocess.TimeoutExpired) as error:
+            current_app.logger.warning('HEVC transcode failed: %s', error)
+            raise UploadValidationError('视频转换超时或失败，请缩短视频后重试。')
+        if completed.returncode != 0 or not output.exists():
+            details = completed.stderr.decode('utf-8', errors='replace')[-1000:]
+            current_app.logger.warning('HEVC transcode failed: %s', details)
+            raise UploadValidationError('视频转换失败，请确认文件完整后重试。')
+        converted = output.read_bytes()
+        if not converted:
+            raise UploadValidationError('视频转换失败，请确认文件完整后重试。')
+        return converted
 
 
 def _upload_root():
@@ -137,6 +180,10 @@ def prepare_video(file_storage):
     if not valid_content:
         raise UploadValidationError('文件内容不是有效的 {} 视频。'.format(
             'MP4' if extension == '.mp4' else 'WebM'))
+    # MP4 is only a container. Phones commonly record HEVC/H.265 inside it;
+    # transparently convert those videos so browsers receive H.264 instead.
+    if extension == '.mp4' and (b'hvc1' in data or b'hev1' in data):
+        data = _transcode_hevc_mp4(data)
     return PreparedVideo(data=data, extension=extension, mime_type=mime_type)
 
 

@@ -11,7 +11,7 @@
         </button>
         {% elif post.video_items %}
         <div class="article-cover-video-frame">
-            <video class="article-cover-video video-cover-preview" src="{{ url_for('static', filename=post.video_items[0].media.file_path) }}" muted playsinline preload="metadata" aria-label="{{ post.title or '博文' }}的视频预览"></video>
+            <video class="article-cover-video video-cover-preview" src="{{ url_for('static', filename=post.video_items[0].media.file_path, v=post.video_items[0].media.file_size) }}" muted playsinline preload="metadata" aria-label="{{ post.title or '博文' }}的视频封面"></video>
         </div>
         {% else %}
         <button class="article-cover gallery-thumb" type="button" data-full="{{ url_for('static', filename=post.cover_image) }}">
@@ -57,11 +57,11 @@
 
             <div class="article-body">{{ post.content }}</div>
 
-            {% if post.display_images|length > 1 %}
+            {% if post.display_images %}
             <div class="post-gallery article-inline-gallery">
-                {% for image_path in post.display_images[1:] %}
+                {% for image_path in post.display_images %}
                 <button class="gallery-thumb" type="button" data-full="{{ url_for('static', filename=image_path) }}">
-                    <img src="{{ url_for('static', filename=image_path) }}" alt="{{ post.title or '博文图片' }} {{ loop.index + 1 }}" loading="lazy">
+                    <img src="{{ url_for('static', filename=image_path) }}" alt="{{ post.title or '博文图片' }} {{ loop.index }}" loading="lazy">
                 </button>
                 {% endfor %}
             </div>
@@ -70,10 +70,16 @@
             {% if post.video_items %}
             <div class="post-video-list">
                 {% for item in post.video_items %}
-                <video class="post-video" controls preload="metadata" playsinline>
-                    <source src="{{ url_for('static', filename=item.media.file_path) }}" type="{{ item.media.mime_type }}">
-                    当前浏览器不支持视频播放。
-                </video>
+                <div class="post-video-item">
+                    <video class="post-video" controls preload="auto" playsinline>
+                        <source src="{{ url_for('static', filename=item.media.file_path, v=item.media.file_size) }}" type="{{ item.media.mime_type }}">
+                        当前浏览器不支持视频播放。
+                    </video>
+                    <p class="video-playback-error" hidden>
+                        浏览器无法解码这个视频，它可能使用了 HEVC/H.265 等不兼容编码。
+                        <a href="{{ url_for('static', filename=item.media.file_path, v=item.media.file_size) }}" download>下载原视频</a>
+                    </p>
+                </div>
                 {% endfor %}
             </div>
             {% endif %}

@@ -5,7 +5,7 @@
 
 {% block styles %}
 {{ super() }}
-<link rel="stylesheet" href="{{ url_for('static', filename='custom.css') }}?v=20260704-confirm-dialog">
+<link rel="stylesheet" href="{{ url_for('static', filename='custom.css') }}?v=20260705-multi-image-picker">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&family=Noto+Serif+SC:wght@500;600;700&display=swap">
 {% endblock %}
 
@@ -618,19 +618,180 @@
         document.querySelectorAll('video.video-cover-preview').forEach(function(video) {
             if (video.dataset.previewInitialized === 'true') return;
             video.dataset.previewInitialized = 'true';
+            function freezeArticleCover() {
+                if (!video.classList.contains('article-cover-video') ||
+                        !video.videoWidth || !video.videoHeight) return;
+                try {
+                    var scale = Math.min(1, 1280 / video.videoWidth);
+                    var canvas = document.createElement('canvas');
+                    canvas.width = Math.round(video.videoWidth * scale);
+                    canvas.height = Math.round(video.videoHeight * scale);
+                    canvas.getContext('2d').drawImage(
+                        video, 0, 0, canvas.width, canvas.height);
+                    var image = document.createElement('img');
+                    image.className = 'article-cover-video frozen-video-cover';
+                    image.alt = video.getAttribute('aria-label') || '视频封面';
+                    image.src = canvas.toDataURL('image/jpeg', 0.84);
+                    video.pause();
+                    video.removeAttribute('src');
+                    video.load();
+                    video.replaceWith(image);
+                } catch (error) {
+                    video.pause();
+                }
+            }
             function showFirstFrame() {
                 if (!Number.isFinite(video.duration) || video.duration <= 0) return;
                 video.currentTime = Math.min(0.1, video.duration / 2);
                 video.pause();
+                if (video.classList.contains('article-cover-video')) {
+                    if (video.readyState >= 2) freezeArticleCover();
+                    else video.addEventListener('loadeddata', freezeArticleCover,
+                                                {once: true});
+                    video.addEventListener('seeked', freezeArticleCover,
+                                           {once: true});
+                }
             }
             if (video.readyState >= 1) showFirstFrame();
             else video.addEventListener('loadedmetadata', showFirstFrame, {once: true});
         });
     }
 
+    function initializeVideoPlaybackErrors() {
+        document.querySelectorAll('.post-video-item').forEach(function(item) {
+            var video = item.querySelector('video.post-video');
+            var message = item.querySelector('.video-playback-error');
+            if (!video || !message || video.dataset.errorInitialized === 'true') return;
+            video.dataset.errorInitialized = 'true';
+            function showError() { message.hidden = false; }
+            function hideError() { message.hidden = true; }
+            video.addEventListener('error', showError);
+            video.addEventListener('canplay', hideError);
+            if (video.error) showError();
+        });
+    }
+
+    function initializePostVideos() {
+        document.querySelectorAll('video.post-video').forEach(function(video) {
+            if (video.dataset.playbackInitialized === 'true') return;
+            video.dataset.playbackInitialized = 'true';
+
+            video.addEventListener('play', function() {
+                document.querySelectorAll('video.post-video').forEach(function(other) {
+                    if (other !== video) other.pause();
+                });
+                if (!audio.paused) {
+                    audio.pause();
+                    localStorage.setItem('musicPlaying', '0');
+                    saveMusicState();
+                    syncPlayingState();
+                }
+            });
+
+            video.addEventListener('ended', function() {
+                video.pause();
+                video.currentTime = 0;
+            });
+        });
+    }
+
+    function initializePostImageUpload() {
+        document.querySelectorAll('input.js-post-images').forEach(function(input) {
+            if (input.dataset.uploadInitialized === 'true') return;
+            input.dataset.uploadInitialized = 'true';
+
+            var group = input.closest('.form-group');
+            var status = group && group.querySelector('.post-image-selection-status');
+            var preview = group && group.querySelector('.post-image-preview');
+            var maxImages = Number(input.dataset.maxImages || 9);
+            var selectedFiles = Array.from(input.files || []);
+            var previewUrls = [];
+
+            function fileKey(file) {
+                return [file.name, file.size, file.lastModified].join(':');
+            }
+
+            function updateInputFiles() {
+                if (typeof DataTransfer === 'undefined') return false;
+                try {
+                    var transfer = new DataTransfer();
+                    selectedFiles.forEach(function(file) { transfer.items.add(file); });
+                    input.files = transfer.files;
+                    return true;
+                } catch (error) {
+                    return false;
+                }
+            }
+
+            function renderSelection(message, isError) {
+                previewUrls.forEach(function(url) { URL.revokeObjectURL(url); });
+                previewUrls = [];
+                if (status) {
+                    status.textContent = message || (selectedFiles.length
+                        ? '已选择 ' + selectedFiles.length + ' 张图片，可继续点击上方控件追加。'
+                        : '尚未选择新图片');
+                    status.classList.toggle('has-error', Boolean(isError));
+                }
+                if (!preview) return;
+                preview.innerHTML = '';
+                selectedFiles.forEach(function(file, index) {
+                    var item = document.createElement('div');
+                    item.className = 'post-image-preview-item';
+                    var image = document.createElement('img');
+                    var url = URL.createObjectURL(file);
+                    previewUrls.push(url);
+                    image.src = url;
+                    image.alt = file.name;
+                    var remove = document.createElement('button');
+                    remove.type = 'button';
+                    remove.className = 'post-image-preview-remove';
+                    remove.dataset.index = String(index);
+                    remove.setAttribute('aria-label', '移除 ' + file.name);
+                    remove.textContent = '×';
+                    item.appendChild(image);
+                    item.appendChild(remove);
+                    preview.appendChild(item);
+                });
+            }
+
+            input.addEventListener('change', function() {
+                var additions = Array.from(input.files || []);
+                var known = new Set(selectedFiles.map(fileKey));
+                additions.forEach(function(file) {
+                    var key = fileKey(file);
+                    if (!known.has(key)) {
+                        selectedFiles.push(file);
+                        known.add(key);
+                    }
+                });
+                if (selectedFiles.length > maxImages) {
+                    selectedFiles = selectedFiles.slice(0, maxImages);
+                    if (!updateInputFiles()) selectedFiles = additions.slice(0, maxImages);
+                    renderSelection('每篇博文最多选择 ' + maxImages + ' 张图片，多出的图片未加入。', true);
+                    return;
+                }
+                if (!updateInputFiles()) selectedFiles = additions;
+                renderSelection();
+            });
+
+            if (preview) preview.addEventListener('click', function(event) {
+                var button = event.target.closest('.post-image-preview-remove');
+                if (!button) return;
+                selectedFiles.splice(Number(button.dataset.index), 1);
+                updateInputFiles();
+                renderSelection();
+            });
+
+            renderSelection();
+        });
+    }
+
     function initializePageFeatures() {
         initializeProfileContrast();
         initializeVideoCoverPreviews();
+        initializeVideoPlaybackErrors();
+        initializePostVideos();
+        initializePostImageUpload();
         document.dispatchEvent(new CustomEvent('rx:page-ready'));
     }
 

@@ -424,8 +424,13 @@ class CommunityPlatformTest(unittest.TestCase):
         self.assertIn('article-info-card', page)
         self.assertIn('article-cover', page)
         self.assertIn('Image post', page)
+        self.assertIn('custom.css?v=20260705-multi-image-picker', page)
         self.assertNotIn('发布板块', page)
         self.assertIn('post-gallery', page)
+        # The first uploaded image is also the card/header cover, but must not
+        # disappear from the article body gallery.
+        self.assertEqual(page.count('alt="Image post 1"'), 1)
+        self.assertEqual(page.count('alt="Image post 2"'), 1)
         home_page = self.client.get('/').get_data(as_text=True)
         self.assertIn('post-card-cover', home_page)
         self.assertIn('Image post', home_page)
@@ -442,6 +447,14 @@ class CommunityPlatformTest(unittest.TestCase):
             first_path = Path(self.upload_dir) / Path(
                 post.image_items[0].media.file_path).name
             self.assertTrue(first_path.exists())
+
+        editor_page = self.client.get('/post/{}/edit'.format(post_id)).get_data(
+            as_text=True)
+        self.assertIn('name="images"', editor_page)
+        self.assertIn('multiple', editor_page)
+        self.assertIn('js-post-images', editor_page)
+        self.assertIn('data-max-images="9"', editor_page)
+        self.assertIn('post-image-preview', editor_page)
 
         edit_response = self.client.post(
             '/post/{}/edit'.format(post_id), data={
@@ -526,8 +539,17 @@ class CommunityPlatformTest(unittest.TestCase):
         page = response.get_data(as_text=True)
         self.assertIn('class="post-video"', page)
         self.assertIn('type="video/mp4"', page)
+        self.assertIn('class="video-playback-error"', page)
+        self.assertIn('download', page)
         self.assertIn('class="article-cover-video-frame"', page)
         self.assertIn('article-cover-video video-cover-preview', page)
+        self.assertEqual(page.count('<video'), 2)
+        self.assertIn('preload="auto"', page)
+        self.assertIn('function initializePostVideos()', page)
+        self.assertIn("localStorage.setItem('musicPlaying', '0')", page)
+        self.assertIn('video.currentTime = 0', page)
+        self.assertIn('function freezeArticleCover()', page)
+        self.assertIn("video.removeAttribute('src')", page)
         home = self.client.get('/').get_data(as_text=True)
         self.assertIn('class="video-cover-preview"', home)
 
@@ -571,6 +593,26 @@ class CommunityPlatformTest(unittest.TestCase):
         with app.app_context():
             self.assertIsNone(Post.query.filter_by(
                 title='Invalid video').first())
+
+        converted_data = (b'\x00\x00\x00\x18ftypisom' +
+                          b'\x00\x00\x00\x10avc1payload')
+        with patch('app.uploads._transcode_hevc_mp4',
+                   return_value=converted_data) as transcode:
+            hevc = self.client.post('/post/new', data={
+                'title': 'HEVC video', 'content': 'Browser-compatible.',
+                'tags': '',
+                'video': (BytesIO(b'\x00\x00\x00\x18ftypisom' +
+                                  b'\x00\x00\x00\x10hvc1payload'),
+                          'hevc.mp4'),
+                'submit': '发布博文'
+            }, content_type='multipart/form-data', follow_redirects=True)
+        self.assertEqual(hevc.status_code, 200)
+        transcode.assert_called_once()
+        with app.app_context():
+            converted_post = Post.query.filter_by(title='HEVC video').one()
+            converted_path = Path(self.upload_dir) / Path(
+                converted_post.video_items[0].media.file_path).name
+            self.assertEqual(converted_path.read_bytes(), converted_data)
 
         deleted = self.client.post(
             '/post/{}/delete'.format(post_id),

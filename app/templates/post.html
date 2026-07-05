@@ -46,14 +46,16 @@
 
     <div class="form-group{% if form.images.errors %} has-error{% endif %}">
         {{ form.images.label }}
-        {{ form.images(class_='form-control', accept='.jpg,.jpeg,.png,.gif,.webp') }}
-        <p class="help-block">支持 JPG、PNG、GIF、WebP；最多 9 张，单张不超过 5MB。</p>
+        {{ form.images(class_='form-control js-post-images', accept='.jpg,.jpeg,.png,.gif,.webp', multiple=True, data_max_images=9) }}
+        <p class="help-block">支持 JPG、PNG、GIF、WebP；可分多次追加选择，最多 9 张，单张不超过 5MB。</p>
+        <p class="post-image-selection-status" aria-live="polite">尚未选择新图片</p>
+        <div class="post-image-preview" aria-label="待上传图片预览"></div>
         {% for error in form.images.errors %}<span class="help-block">{{ error }}</span>{% endfor %}
     </div>
     <div class="form-group{% if form.video.errors %} has-error{% endif %}">
         {{ form.video.label }}
         {{ form.video(class_='form-control', accept='.mp4,.webm,video/mp4,video/webm') }}
-        <p class="help-block">支持 MP4、WebM；每篇博文最多 1 个，不超过 30MB。</p>
+        <p class="help-block">支持 MP4、WebM；每篇博文最多 1 个，不超过 30MB。HEVC/H.265 视频会自动转换为兼容格式。</p>
         {% for error in form.video.errors %}<span class="help-block">{{ error }}</span>{% endfor %}
     </div>
     {{ form.submit(class_='btn btn-primary btn-lg') }}
